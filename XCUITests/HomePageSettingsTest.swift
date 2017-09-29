@@ -7,7 +7,7 @@ import XCTest
 class HomePageSettingsTest: BaseTestCase {
     var navigator: Navigator!
     var app: XCUIApplication!
-
+    
     override func setUp() {
         super.setUp()
         app = XCUIApplication()
@@ -22,22 +22,25 @@ class HomePageSettingsTest: BaseTestCase {
     // This test has moved from KIF UITest - accesses google.com instead of local webserver instance
     func testCurrentPage() {
         navigator.goto(BrowserTab)
-
+        
         // Accessing https means that it is routed
-        waitForValueContains(app.textFields["url"], value: "https://www.mozilla")
-        let currentURL = app.textFields["url"].value as! String
-
-        // Go via the menu, becuase if we go via the TabTray, then we 
+        //        waitForValueContains(app.textFields["url"], value: "https://www.mozilla")
+        var currentURL = app.textFields["url"].value as! String
+        
+        // Go via the menu, becuase if we go via the TabTray, then we
         // won't have a current tab.
-        navigator.goto(BrowserTabMenu)
         navigator.goto(HomePageSettings)
-        let tablesQuery = app.tables
-        tablesQuery.staticTexts["Use Current Page"].tap()
-        
+        app.tables.staticTexts["Use Current Page"].tap()
+
         // check the value of the current homepage
-        XCTAssertEqual(currentURL, app.tables.textFields["HomePageSettingTextField"].value as? String)
-        tablesQuery.staticTexts["Clear"].tap()
+        let homepageURL = app.tables.textFields["HomePageSettingTextField"].value as? String
         
+        if homepageURL?.hasPrefix("https://") == true {
+            currentURL = "https://\(currentURL)"
+        }
+        XCTAssertEqual(currentURL, homepageURL)
+        app.tables.staticTexts["Clear"].tap()
+
         let urlString = app.tables.textFields["HomePageSettingTextField"].value ?? ""
         
         if iPad() {
@@ -50,24 +53,23 @@ class HomePageSettingsTest: BaseTestCase {
     // Check whether the toolbar/menu shows homepage icon
     func testShowHomePageIcon() {
         // Check the Homepage icon is present in menu by default
-        navigator.goto(BrowserTabMenu)
-        let collectionViewsQuery = app.collectionViews
-        waitforExistence(collectionViewsQuery.cells["SetHomePageMenuItem"])
-        
-        // Go to settings, and disable the homepage icon switch
+        navigator.goto(BrowserTab)
+        var currentURL = app.textFields["url"].value as! String
+        navigator.goto(PageOptionsMenu)
+        waitforExistence(app.tables.staticTexts["Set as Homepage"])
+        app.tables.staticTexts["Set as Homepage"].tap()
+        app.buttons["Set Homepage"].tap()
+
+        navigator.nowAt(BrowserTab)
         navigator.goto(HomePageSettings)
         
-        let value = app.tables.cells.switches["Show Homepage Icon In Menu, Otherwise show in the toolbar"].value
-        XCTAssertEqual(value as? String, "1")
-        
-        app.tables.switches["Show Homepage Icon In Menu, Otherwise show in the toolbar"].tap()
-        let newValue = app.tables.cells.switches["Show Homepage Icon In Menu, Otherwise show in the toolbar"].value
-        XCTAssertEqual(newValue as? String, "0")
+        if currentURL.hasPrefix("https://") == false {
+            currentURL = "https://\(currentURL)"
+        }
 
-        // Both pages do not show Homepage icon
-        navigator.goto(BrowserTabMenu)
-        waitforNoExistence(collectionViewsQuery.cells["SetHomePageMenuItem"])
-        navigator.goto(BrowserTabMenu2)
-        waitforNoExistence(collectionViewsQuery.cells["SetHomePageMenuItem"])
+        // Go to settings, and check the url are matching or not
+        let value = app.textFields["HomePageSettingTextField"].value as! String
+        XCTAssertEqual(value, currentURL,
+                       "The webpage typed does not match with the one saved")
     }
 }

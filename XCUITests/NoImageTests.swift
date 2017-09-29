@@ -22,13 +22,15 @@ class NoImageTests: BaseTestCase {
     }
     
     private func showImages() {
-        app.buttons["TabToolbar.menuButton"].tap()
+        navigator.goto(BrowserTabMenu)
         app.tables.cells["Show Images"].tap()
+        navigator.nowAt(BrowserTab)
     }
     
     private func hideImages() {
-        app.buttons["TabToolbar.menuButton"].tap()
+        navigator.goto(BrowserTabMenu)
         app.tables.cells["Hide Images"].tap()
+        navigator.nowAt(BrowserTab)
     }
     
     private func checkShowImages() {
@@ -43,28 +45,29 @@ class NoImageTests: BaseTestCase {
         navigator.goto(BrowserTab)
     }
     
+    private func refreshPage() {
+        app.buttons["TabToolbar.stopReloadButton"].tap()
+        waitUntilPageLoad()
+    }
+    
+    // Now UITest/NoImageModeTest checks the functionality. This test only checks forUI change
     func testImageOnOff() {
         let url1 = "www.google.com"
         
         // Go to a webpage, and select no images or hide images, check it's hidden or not
         navigator.openNewURL(urlString: url1)
-        XCTAssertTrue(app.images.count > 1)
+        waitUntilPageLoad()
         hideImages()
-        
-        //After image is hidden, only image detected is the lock icon in the UI
-        if iPad() {
-            XCTAssertTrue(app.images.count == 2)
-        } else {
-            XCTAssertTrue(app.images.count == 1)
-        }
         checkShowImages()
+        navigator.goto(BrowserTab)
         
         // Load a same page on a new tab, check images are hidden
         navigator.openURL(urlString: url1)
-        
+        waitUntilPageLoad()
+
         // Open it, then select show images it, and check it's showing the images
         showImages()
-        XCTAssertTrue(app.images.count > 1)
         checkHideImages()
+        navigator.goto(BrowserTab)
     }
 }

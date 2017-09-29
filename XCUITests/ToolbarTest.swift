@@ -12,9 +12,11 @@ class ToolbarTests: BaseTestCase {
     var app: XCUIApplication!
 
     override func setUp() {
+        
         super.setUp()
         app = XCUIApplication()
         navigator = createScreenGraph(app).navigator(self)
+        XCUIDevice.shared().orientation = .landscapeLeft
     }
 
     override func tearDown() {
@@ -25,10 +27,8 @@ class ToolbarTests: BaseTestCase {
      * Tests landscape page navigation enablement with the URL bar with tab switching.
      */
     func testLandscapeNavigationWithTabSwitch() {
-        XCUIDevice.shared().orientation = .landscapeLeft
-
+        
         // Check that url field is empty and it shows a placeholder
-        navigator.goto(NewTabScreen)
         let urlPlaceholder = "Search or enter address"
         XCTAssert(app.textFields["url"].exists)
         let defaultValuePlaceholder = app.textFields["url"].placeholderValue!
@@ -58,28 +58,23 @@ class ToolbarTests: BaseTestCase {
         XCTAssertTrue(app.buttons["Forward"].isEnabled)
 
         // Open new tab and then go back to previous tab to test navigation buttons.
-
-        navigator.goto(NewTabScreen)
         navigator.goto(TabTray)
 
         waitforExistence(app.collectionViews.cells[website1["label"]!])
         app.collectionViews.cells[website1["label"]!].tap()
+        navigator.nowAt(BrowserTab)
         waitForValueContains(app.textFields["url"], value: website1["value"]!)
 
         // Test to see if all the buttons are enabled then close tab.
         XCTAssertTrue(app.buttons["URLBarView.backButton"].isEnabled)
         XCTAssertTrue(app.buttons["Forward"].isEnabled)
-
-        navigator.nowAt(BrowserTab)
         navigator.goto(TabTray)
 
         waitforExistence(app.collectionViews.cells[website1["label"]!])
         app.collectionViews.cells[website1["label"]!].swipeRight()
 
         // Go Back to other tab to see if all buttons are disabled.
-        waitforExistence(app.collectionViews.cells["home"])
-        app.collectionViews.cells["home"].tap()
-
+        navigator.nowAt(BrowserTab)
         XCTAssertFalse(app.buttons["URLBarView.backButton"].isEnabled)
         XCTAssertFalse(app.buttons["Forward"].isEnabled)
 

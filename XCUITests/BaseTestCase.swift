@@ -66,15 +66,15 @@ class BaseTestCase: XCTestCase {
         UIPasteboard.general.string = url
         app.textFields["url"].press(forDuration: 2.0)
         app.sheets.element(boundBy: 0).buttons.element(boundBy: 0).tap()
-
+        
         if waitForLoadToFinish {
             let finishLoadingTimeout: TimeInterval = 30
             let progressIndicator = app.progressIndicators.element(boundBy: 0)
             waitFor(progressIndicator,
                     with: "exists != true",
                     description: "Problem loading \(url)",
-                    timeout: finishLoadingTimeout,
-                    file: file, line: line)
+                timeout: finishLoadingTimeout,
+                file: file, line: line)
         }
     }
     
@@ -84,11 +84,18 @@ class BaseTestCase: XCTestCase {
         }
         return false
     }
+    
+    func waitUntilPageLoad() {
+        let app = XCUIApplication()
+        let progressIndicator = app.progressIndicators.element(boundBy: 0)
+    
+        waitforNoExistence(progressIndicator)
+    }
 }
 
 extension BaseTestCase {
     func tabTrayButton(forApp app: XCUIApplication) -> XCUIElement {
-        return app.buttons["TopTabsViewController.tabsButton"].exists ? app.buttons["TopTabsViewController.tabsButton"] : app.buttons["URLBarView.tabsButton"]
+        return app.buttons["TopTabsViewController.tabsButton"].exists ? app.buttons["TopTabsViewController.tabsButton"] : app.buttons["TabToolbar.tabsButton"]
     }
 }
 
