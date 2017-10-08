@@ -140,14 +140,15 @@ class NavigationTest: BaseTestCase {
 
         // Scroll to bottom
         bottomElement.tap()
+        waitUntilPageLoad()
         if iPad() {
             app.buttons["URLBarView.backButton"].tap()
         } else {
             app.buttons["TabToolbar.backButton"].tap()
         }
-
+        
         // Scroll to top
-        sleep(3)
+        waitUntilPageLoad()
         topElement.tap()
     }
 

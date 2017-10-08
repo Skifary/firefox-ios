@@ -181,6 +181,9 @@
                <Test
                   Identifier = "HomePageUITest">
                </Test>
+               <Test
+                  Identifier = "SiteLoadTest">
+               </Test>
             </SkippedTests>
          </TestableReference>
       </Testables>

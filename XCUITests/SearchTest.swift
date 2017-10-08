@@ -139,6 +139,7 @@ class SearchTests: BaseTestCase {
         tablesQuery2.staticTexts[searchEngine].tap()
         
         navigator.openURL(urlString: "foo")
+        waitUntilPageLoad()
         waitForValueContains(app.textFields["url"], value: searchEngine.lowercased())
         
         // Go here so that next time it is possible to access settings

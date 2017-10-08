@@ -118,7 +118,7 @@ class ActivityStreamTest: BaseTestCase {
         // Remove it
         app.collectionViews.cells["TopSitesCell"].cells[allDefaultTopSites[0]].press(forDuration: 1)
         selectOptionFromContextMenu (option: "Remove")
-        
+        waitforExistence(app.collectionViews.cells.collectionViews.cells.element(boundBy: 0))
         // Check top site in first cell now
         let topSiteFirstCellAfter = app.collectionViews.cells.collectionViews.cells.element(boundBy: 0).label
         XCTAssertTrue(topSiteFirstCellAfter == allDefaultTopSites[1])
@@ -294,6 +294,7 @@ class ActivityStreamTest: BaseTestCase {
     private func selectOptionFromContextMenu (option: String) {
         XCTAssertTrue(app.tables["Context Menu"].cells[option].exists)
         app.tables["Context Menu"].cells[option].tap()
+        waitforNoExistence(app.tables["Context Menu"])
     }
     
     func testActivityStreamPages() {
