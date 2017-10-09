@@ -35,6 +35,7 @@ class ClipBoardTests: BaseTestCase {
         app.menuItems["Select All"].tap()
         waitforExistence(app.menuItems["Copy"])
         app.menuItems["Copy"].tap()
+        waitforNoExistence(app.menuItems["Copy"])
     }
     
     //Check copied url is same as in browser
