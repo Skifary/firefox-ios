@@ -14,7 +14,7 @@ class AppSettingsTableViewController: SettingsTableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        navigationItem.title = NSLocalizedString("Settings", comment: "Settings")
+        navigationItem.title = NSLocalizedString("Settings", comment: "Title in the settings view controller title bar")
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             title: NSLocalizedString("Done", comment: "Done button on left side of the Settings view controller title bar"),
             style: UIBarButtonItemStyle.done,
@@ -67,12 +67,14 @@ class AppSettingsTableViewController: SettingsTableViewController {
         // setting on iPad. When more options are added that work on both device types, this logic can
         // be changed.
 
-        generalSettings += [
-            BoolSetting(prefs: prefs, prefKey: "showClipboardBar", defaultValue: false,
-                        titleText: Strings.SettingsOfferClipboardBarTitle,
-                        statusText: Strings.SettingsOfferClipboardBarStatus)
-        ]
-        
+        if AppConstants.MOZ_CLIPBOARD_BAR {
+            generalSettings += [
+                BoolSetting(prefs: prefs, prefKey: "showClipboardBar", defaultValue: false,
+                            titleText: Strings.SettingsOfferClipboardBarTitle,
+                            statusText: Strings.SettingsOfferClipboardBarStatus)
+            ]
+        }
+
         var accountSectionTitle: NSAttributedString?
         if AppConstants.MOZ_SHOW_FXA_AVATAR {
             accountSectionTitle = NSAttributedString(string: Strings.FxAFirefoxAccount)
@@ -86,7 +88,8 @@ class AppSettingsTableViewController: SettingsTableViewController {
                 AdvanceAccountSetting(settings: self),
                 // With a Firefox Account:
                 AccountStatusSetting(settings: self),
-                SyncNowSetting(settings: self)
+                SyncNowSetting(settings: self),
+                SyncSetting(settings: self)
             ] + accountChinaSyncSetting + accountDebugSettings)]
 
         settings += [ SettingSection(title: NSAttributedString(string: NSLocalizedString("General", comment: "General settings section title")), children: generalSettings)]
@@ -106,7 +109,7 @@ class AppSettingsTableViewController: SettingsTableViewController {
         ]
 
         if #available(iOS 11, *) {
-            privacySettings.append(ContentBlockerSetting(settings:self))
+            privacySettings.append(ContentBlockerSetting(settings: self))
         }
 
         privacySettings += [

@@ -31,6 +31,11 @@ class TabScrollingController: NSObject {
         }
     }
 
+    // Constraint-based animation is causing PDF docs to flicker. This is used to bypass this animation.
+    var isTabShowingPDF: Bool {
+        return (tab?.mimeType ?? "") == MimeType.PDF.rawValue
+    }
+
     weak var header: UIView?
     weak var footer: UIView?
     weak var urlBar: URLBarView?
@@ -71,7 +76,7 @@ class TabScrollingController: NSObject {
     fileprivate var contentSize: CGSize { return scrollView?.contentSize ?? CGSize.zero }
     fileprivate var scrollViewHeight: CGFloat { return scrollView?.frame.height ?? 0 }
     fileprivate var topScrollHeight: CGFloat { return header?.frame.height ?? 0 }
-    fileprivate var bottomScrollHeight: CGFloat { return urlBar?.frame.height ?? 0 }
+    fileprivate var bottomScrollHeight: CGFloat { return footer?.frame.height ?? 0 }
     fileprivate var snackBarsFrame: CGRect { return snackBars?.frame ?? CGRect.zero }
 
     fileprivate var lastContentOffset: CGFloat = 0
@@ -116,7 +121,7 @@ class TabScrollingController: NSObject {
             completion: completion)
     }
 
-    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
         if keyPath == "contentSize" {
             if !checkScrollHeightIsLargeEnoughForScrolling() && !toolbarsShowing {
                 showToolbars(animated: true, completion: nil)
@@ -179,11 +184,13 @@ private extension TabScrollingController {
 
             lastContentOffset = translation.y
             if checkRubberbandingForDelta(delta) && checkScrollHeightIsLargeEnoughForScrolling() {
-                if (toolbarState != .collapsed || contentOffset.y <= 0) && contentOffset.y + scrollViewHeight < contentSize.height {
+                let bottomIsNotRubberbanding = contentOffset.y + scrollViewHeight < contentSize.height
+                let topIsRubberbanding = contentOffset.y <= 0
+                if isTabShowingPDF || ((toolbarState != .collapsed || topIsRubberbanding) && bottomIsNotRubberbanding) {
                     scrollWithDelta(delta)
                 }
 
-                if headerTopOffset == -topScrollHeight {
+                if headerTopOffset == -topScrollHeight && footerBottomOffset == bottomScrollHeight {
                     toolbarState = .collapsed
                 } else if headerTopOffset == 0 {
                     toolbarState = .visible
@@ -238,8 +245,18 @@ private extension TabScrollingController {
     }
 
     func animateToolbarsWithOffsets(_ animated: Bool, duration: TimeInterval, headerOffset: CGFloat, footerOffset: CGFloat, alpha: CGFloat, completion: ((_ finished: Bool) -> Void)?) {
+        guard let scrollView = scrollView else { return }
+        let initialContentOffset = scrollView.contentOffset
+
+        // If this function is used to fully animate the toolbar from hidden to shown, keep the page from scrolling by adjusting contentOffset,
+        // Otherwise when the toolbar is hidden and a link navigated, showing the toolbar will scroll the page and
+        // produce a ~50px page jumping effect in response to tap navigations.
+        let isShownFromHidden = headerTopOffset == -topScrollHeight && headerOffset == 0
 
         let animation: () -> Void = {
+            if isShownFromHidden {
+                scrollView.contentOffset = CGPoint(x: initialContentOffset.x, y: initialContentOffset.y + self.topScrollHeight)
+            }
             self.headerTopOffset = headerOffset
             self.footerBottomOffset = footerOffset
             self.urlBar?.updateAlphaForSubviews(alpha)
@@ -282,9 +299,9 @@ extension TabScrollingController: UIScrollViewDelegate {
 
         if (decelerate || (toolbarState == .animating && !decelerate)) && checkScrollHeightIsLargeEnoughForScrolling() {
             if scrollDirection == .up {
-                showToolbars(animated: true)
+                showToolbars(animated: !isTabShowingPDF)
             } else if scrollDirection == .down {
-                hideToolbars(animated: true)
+                hideToolbars(animated: !isTabShowingPDF)
             }
         }
     }

@@ -7,19 +7,6 @@ import XCTest
 let website = ["url": "www.mozilla.org", "value": "www.mozilla.org", "subDomain": "https://www.mozilla.org/en-US/firefox/products"]
 
 class DomainAutocompleteTest: BaseTestCase {
-    var navigator: Navigator!
-    var app: XCUIApplication!
-
-    override func setUp() {
-        super.setUp()
-        app = XCUIApplication()
-        navigator = createScreenGraph(app).navigator(self)
-    }
-
-    override func tearDown() {
-        super.tearDown()
-    }
-
     func testAutocomplete() {
         navigator.openURL(urlString: website["url"]!)
 
@@ -75,6 +62,7 @@ class DomainAutocompleteTest: BaseTestCase {
     // Ensure that the scheme is included in the autocompletion.
     func testEnsureSchemeIncludedAutocompletion() {
         navigator.openURL(urlString: website["url"]!)
+        waitUntilPageLoad()
         navigator.goto(URLBarOpen)
         app.textFields["address"].typeText("https")
         waitForValueContains(app.textFields["address"], value: "mozilla")

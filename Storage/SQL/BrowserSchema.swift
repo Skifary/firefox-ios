@@ -128,7 +128,7 @@ private let log = Logger.syncLogger
  * We rely on SQLiteHistory having initialized the favicon table first.
  */
 open class BrowserSchema: Schema {
-    static let DefaultVersion = 33    // Bug 1335201.
+    static let DefaultVersion = 34    // Bug 1409777.
 
     public var name: String { return "BROWSER" }
     public var version: Int { return BrowserSchema.DefaultVersion }
@@ -1169,6 +1169,25 @@ open class BrowserSchema: Schema {
             }
         }
 
+        if from < 34 && to >= 34 {
+            // Drop over-large items from the database, and truncate
+            // over-long titles.
+            // We do this once, and only for local bookmarks: if they
+            // already escaped, then it's better to let them be.
+            // Hard-code values here both for simplicity and to make
+            // migrations predictable.
+            // We don't need to worry about description: we never wrote it.
+            if !self.run(db, queries: [
+                "DELETE FROM \(TableHistory) WHERE is_deleted = 0 AND length(url) > 65536",
+                "DELETE FROM \(TablePageMetadata) WHERE length(site_url) > 65536",
+                "DELETE FROM \(TableBookmarksLocal) WHERE is_deleted = 0 AND length(bmkUri) > 65536",
+                "UPDATE \(TableBookmarksLocal) SET title = substr(title, 1, 4096)" +
+                "  WHERE is_deleted = 0 AND length(title) > 4096",
+                ]) {
+                return false
+            }
+        }
+
         return true
     }
     
@@ -1217,8 +1236,7 @@ open class BrowserSchema: Schema {
         do {
             try db.executeChange(sql)
         } catch let err as NSError {
-            log.error("Error dropping tableList table: \(err.localizedDescription)")
-            SentryIntegration.shared.sendWithStacktrace(message: "Error dropping tableList table: \(err.localizedDescription)", tag: "BrowserDB", severity: .error)
+            Sentry.shared.sendWithStacktrace(message: "Error dropping tableList table", tag: SentryTag.browserDB, severity: .error, description: "\(err.localizedDescription)")
             return false
         }
 
@@ -1227,8 +1245,7 @@ open class BrowserSchema: Schema {
         do {
             try db.setVersion(previousVersion)
         } catch let err as NSError {
-            log.error("Error setting database version: \(err.localizedDescription)")
-            SentryIntegration.shared.sendWithStacktrace(message: "Error setting database version: \(err.localizedDescription)", tag: "BrowserDB", severity: .error)
+            Sentry.shared.sendWithStacktrace(message: "Error setting database version", tag: SentryTag.browserDB, severity: .error, description: "\(err.localizedDescription)")
             return false
         }
         
@@ -1272,7 +1289,8 @@ open class BrowserSchema: Schema {
                 try db.executeChange(sql)
             } catch let err as NSError {
                 log.error("Error altering \(TableClients) table: \(err.localizedDescription); SQL was \(sql)")
-                SentryIntegration.shared.sendWithStacktrace(message: "Error altering \(TableClients) table: \(err.localizedDescription); SQL was \(sql)", tag: "BrowserDB", severity: .error)
+                let extra = ["table": "\(TableClients)", "errorDescription": "\(err.localizedDescription)", "sql": "\(sql)"]
+                Sentry.shared.sendWithStacktrace(message: "Error altering table", tag: SentryTag.browserDB, severity: .error, extra: extra)
                 return .failure
             }
         }
@@ -1283,7 +1301,8 @@ open class BrowserSchema: Schema {
                 try db.executeChange(sql)
             } catch let err as NSError {
                 log.error("Error altering \(TableClients) table: \(err.localizedDescription); SQL was \(sql)")
-                SentryIntegration.shared.sendWithStacktrace(message: "Error altering \(TableClients) table: \(err.localizedDescription); SQL was \(sql)", tag: "BrowserDB", severity: .error)
+                let extra = ["table": "\(TableClients)", "errorDescription": "\(err.localizedDescription)", "sql": "\(sql)"]
+                Sentry.shared.sendWithStacktrace(message: "Error altering table", tag: SentryTag.browserDB, severity: .error, extra: extra)
                 return .failure
             }
         }

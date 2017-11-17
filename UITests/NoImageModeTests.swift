@@ -22,18 +22,27 @@ class NoImageModeTests: KIFTestCase {
     }
 
     private func checkHiding(isOn: Bool) {
-        let url = "\(webRoot)/hide-images-test.html"
+        let url = "\(webRoot!)/hide-images-test.html"
         TrackingProtectionTests.checkIfImageLoaded(url: url, shouldBlockImage: isOn)
         BrowserUtils.resetToAboutHome(tester())
     }
 
-    func test() {
+    func testHideImage() {
         checkHiding(isOn: false)
 
         EarlGrey.select(elementWithMatcher: grey_accessibilityLabel("Menu")).perform(grey_tap())
-        EarlGrey.select(elementWithMatcher: GREYMatchers.matcher(forText: "Hide Images: Off")).perform(grey_tap())
+        EarlGrey.select(elementWithMatcher: grey_allOf([grey_accessibilityID("menu-NoImageMode"),
+                                                       grey_accessibilityLabel("Hide Images")]))
+            .perform(grey_tap())
+        EarlGrey.select(elementWithMatcher: GREYMatchers.matcher(forText:"Hide Images")).assert(grey_enabled())
 
         checkHiding(isOn: true)
+
+        EarlGrey.select(elementWithMatcher: grey_accessibilityLabel("Menu")).perform(grey_tap())
+        EarlGrey.select(elementWithMatcher: grey_allOf([grey_accessibilityID("menu-NoImageMode"),
+                                                       grey_accessibilityLabel("Show Images")]))
+        .perform(grey_tap())
+        EarlGrey.select(elementWithMatcher: GREYMatchers.matcher(forText:"Show Images")).assert(grey_enabled())
     }
 
 }

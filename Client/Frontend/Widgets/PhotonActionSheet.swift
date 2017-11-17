@@ -8,7 +8,7 @@ import SnapKit
 import Shared
 
 private struct PhotonActionSheetUX {
-    static let MaxWidth: CGFloat = 375
+    static let MaxWidth: CGFloat = 414
     static let Padding: CGFloat = 10
     static let SectionVerticalPadding: CGFloat = 13
     static let HeaderHeight: CGFloat = 80
@@ -74,7 +74,8 @@ class PhotonActionSheet: UIViewController, UITableViewDelegate, UITableViewDataS
         button.setTitleColor(UIConstants.SystemBlueColor, for: .normal)
         button.layer.cornerRadius = PhotonActionSheetUX.CornerRadius
         button.titleLabel?.font = DynamicFontHelper.defaultHelper.DeviceFontExtraLargeBold
-        button.addTarget(self, action: #selector(PhotonActionSheet.dismiss(_:)), for:.touchUpInside)
+        button.addTarget(self, action: #selector(PhotonActionSheet.dismiss(_:)), for: .touchUpInside)
+        button.accessibilityIdentifier = "PhotonMenu.cancel"
         return button
     }()
     
@@ -141,8 +142,7 @@ class PhotonActionSheet: UIViewController, UITableViewDelegate, UITableViewDataS
             tableView.backgroundColor = .clear
         }
 
-        var width = min(self.view.frame.size.width, PhotonActionSheetUX.MaxWidth) - (PhotonActionSheetUX.Padding * 2)
-        width = self.modalPresentationStyle == .popover ? width : (self.view.frame.width - (PhotonActionSheetUX.Padding * 2))
+        let width = min(self.view.frame.size.width, PhotonActionSheetUX.MaxWidth) - (PhotonActionSheetUX.Padding * 2)
         let height = actionSheetHeight()
         
         if self.modalPresentationStyle == .popover {
@@ -155,7 +155,18 @@ class PhotonActionSheet: UIViewController, UITableViewDelegate, UITableViewDataS
                 make.centerX.equalTo(self.view.snp.centerX)
                 make.width.equalTo(width)
                 make.height.equalTo(PhotonActionSheetUX.CancelButtonHeight)
-                make.bottom.equalTo(self.view.snp.bottom).offset(-PhotonActionSheetUX.Padding)
+                if #available(iOS 11, *) {
+                    let bottomPad: CGFloat
+                    if let window = UIApplication.shared.keyWindow, window.safeAreaInsets.bottom != 0  {
+                        // for iPhone X and similar 
+                        bottomPad = 0
+                    } else {
+                        bottomPad = PhotonActionSheetUX.Padding
+                    }
+                    make.bottom.equalTo(self.view.safeAreaLayoutGuide.snp.bottom).offset(-bottomPad)
+                } else {
+                    make.bottom.equalTo(self.view.snp.bottom).offset(-PhotonActionSheetUX.Padding)
+                }
             }
         }
         
@@ -272,7 +283,7 @@ class PhotonActionSheet: UIViewController, UITableViewDelegate, UITableViewDataS
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: PhotonActionSheetUX.CellName, for: indexPath) as! PhotonActionSheetCell
         let action = actions[indexPath.section][indexPath.row]
-        
+        cell.accessibilityIdentifier = action.iconString
         cell.tintColor = action.isEnabled ? UIConstants.SystemBlueColor : self.tintColor
         cell.configureCell(action.title, imageString: action.iconString)
         return cell
@@ -296,7 +307,7 @@ class PhotonActionSheet: UIViewController, UITableViewDelegate, UITableViewDataS
 private class PhotonActionSheetHeaderView: UITableViewHeaderFooterView {
     static let Padding: CGFloat = 12
     static let VerticalPadding: CGFloat = 2
-    
+
     lazy var titleLabel: UILabel = {
         let titleLabel = UILabel()
         titleLabel.font = DynamicFontHelper.defaultHelper.MediumSizeBoldFontAS
@@ -325,11 +336,7 @@ private class PhotonActionSheetHeaderView: UITableViewHeaderFooterView {
     
     override init(reuseIdentifier: String?) {
         super.init(reuseIdentifier: reuseIdentifier)
-        
-        //        layer.shouldRasterize = true
-        //        layer.rasterizationScale = UIScreen.main.scale
-        isAccessibilityElement = true
-        
+
         self.backgroundView = UIView()
         self.backgroundView?.backgroundColor = .clear
         contentView.addSubview(siteImageView)
@@ -478,6 +485,8 @@ private class PhotonActionSheetCell: UITableViewCell {
     func configureCell(_ label: String, imageString: String) {
         titleLabel.text = label
         titleLabel.textColor = self.tintColor
+        accessibilityIdentifier = imageString
+        accessibilityLabel = label
         if let image = UIImage(named: imageString)?.withRenderingMode(.alwaysTemplate) {
             statusIcon.image = image
             statusIcon.tintColor = self.tintColor

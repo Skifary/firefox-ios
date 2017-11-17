@@ -163,7 +163,7 @@ open class BufferingBookmarksSynchronizer: TimestampedSingleCollectionSynchroniz
 
     open func synchronizeBookmarksToStorage(_ storage: SyncableBookmarks & LocalItemSource & MirrorItemSource, usingBuffer buffer: BookmarkBufferStorage & BufferItemSource, withServer storageClient: Sync15StorageClient, info: InfoCollections, greenLight: @escaping () -> Bool, remoteClientsAndTabs: RemoteClientsAndTabs) -> SyncResult {
         if self.prefs.boolForKey("dateAddedMigrationDone") != true {
-            self.lastFetched = 0;
+            self.lastFetched = 0
             self.prefs.setBool(true, forKey: "dateAddedMigrationDone")
         }
 
@@ -231,7 +231,8 @@ open class BufferingBookmarksSynchronizer: TimestampedSingleCollectionSynchroniz
                     }
                 }).bind { simpleSyncingResult in
                     if let failure = simpleSyncingResult.failureValue {
-                        SentryIntegration.shared.send(message: "Failed to simple sync bookmarks: " + failure.description, tag: "BookmarksSyncing", severity: .error)
+                        let description = failure is RecordTooLargeError ? "Record too large" : failure.description
+                        Sentry.shared.send(message: "Failed to simple sync bookmarks", tag: SentryTag.bookmarks, severity: .error, description: description)
                     }
                     return deferMaybe(result)
                 }
@@ -280,9 +281,9 @@ open class BufferingBookmarksSynchronizer: TimestampedSingleCollectionSynchroniz
         let repairer = BookmarksRepairRequestor(scratchpad: self.scratchpad, basePrefs: self.basePrefs, remoteClients: remoteClientsAndTabs)
         return repairer.startRepairs(validationInfo: error.inconsistencies).bind { result in
             if let repairFailure = result.failureValue {
-                SentryIntegration.shared.send(message: "Bookmarks repair failure: " + repairFailure.description, tag: "BookmarksRepair", severity: .error)
+                Sentry.shared.send(message: "Bookmarks repair failure", tag: SentryTag.bookmarks, severity: .error, description: repairFailure.description)
             } else {
-                SentryIntegration.shared.send(message: "Bookmarks repair succeeded", tag: "BookmarksRepair", severity: .debug)
+                Sentry.shared.send(message: "Bookmarks repair succeeded", tag: SentryTag.bookmarks, severity: .debug)
             }
             return succeed()
         }

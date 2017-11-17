@@ -114,7 +114,7 @@ class PasscodeInputView: UIView, UIKeyInput {
 
 /// A pane that gets displayed inside the PasscodeViewController that displays a title and a passcode input field.
 class PasscodePane: UIView {
-    let codeInputView = PasscodeInputView(passcodeSize: 4)
+    let codeInputView: PasscodeInputView
 
     var codeViewCenterConstraint: Constraint?
     var containerCenterConstraint: Constraint?
@@ -139,7 +139,8 @@ class PasscodePane: UIView {
         }
     }
 
-    init(title: String? = nil) {
+    init(title: String? = nil, passcodeSize: Int = 4) {
+        codeInputView = PasscodeInputView(passcodeSize: passcodeSize)
         super.init(frame: CGRect.zero)
         backgroundColor = UIConstants.TableViewHeaderBackgroundColor
 
@@ -183,11 +184,6 @@ class PasscodePane: UIView {
 
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-    
-    deinit {
-        NotificationCenter.default.removeObserver(self, name: NSNotification.Name.UIKeyboardWillHide, object: nil)
-        NotificationCenter.default.removeObserver(self, name: NSNotification.Name.UIKeyboardWillShow, object: nil)
     }
     
     func keyboardWillShow(_ sender: Notification) {

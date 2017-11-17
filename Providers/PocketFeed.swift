@@ -11,7 +11,7 @@ import Storage
 private let PocketEnvAPIKey = "PocketEnvironmentAPIKey"
 private let PocketGlobalFeed = "https://getpocket.cdn.mozilla.net/v3/firefox/global-recs"
 private let MaxCacheAge: Timestamp = OneMinuteInMilliseconds * 60 // 1 hour in milliseconds
-private let SupportedLocales = ["en_US", "en_GB", "en_CA", "de_DE", "de_AT", "de_CH"]
+private let SupportedLocales = ["en_US", "en_GB", "en_ZA", "de_DE", "de_AT", "de_CH"]
 
 /*s
  The Pocket class is used to fetch stories from the Pocked API.
@@ -50,7 +50,7 @@ private class PocketError: MaybeErrorType {
 
 class Pocket {
     private let pocketGlobalFeed: String
-    static let MoreStoriesURL = URL(string: "https://getpocket.cdn.mozilla.net/explore/trending?src=ff_ios")!
+    static let MoreStoriesURL = URL(string: "https://getpocket.com/explore/trending?src=ff_ios&cdn=0")!
 
     // Allow endPoint to be overriden for testing
     init(endPoint: String = PocketGlobalFeed) {
@@ -60,7 +60,10 @@ class Pocket {
     lazy fileprivate var alamofire: SessionManager = {
         let ua = UserAgent.defaultClientUserAgent
         let configuration = URLSessionConfiguration.default
-        return SessionManager.managerWithUserAgent(ua, configuration: configuration)
+        var defaultHeaders = SessionManager.default.session.configuration.httpAdditionalHeaders ?? [:]
+        defaultHeaders["User-Agent"] = ua
+        configuration.httpAdditionalHeaders = defaultHeaders
+        return SessionManager(configuration: configuration)
     }()
 
     private func findCachedResponse(for request: URLRequest) -> [String: Any]? {

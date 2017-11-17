@@ -21,7 +21,6 @@ class ClearPrivateDataTests: KIFTestCase, UITextFieldDelegate {
 
     override func tearDown() {
         BrowserUtils.resetToAboutHome(tester())
-        BrowserUtils.clearPrivateData(tester: tester())
     }
 
     func visitSites(noOfSites: Int) -> [(title: String, domain: String, dispDomain: String, url: String)] {
@@ -92,30 +91,19 @@ class ClearPrivateDataTests: KIFTestCase, UITextFieldDelegate {
 
     func testClearsHistoryPanel() {
         let urls = visitSites(noOfSites: 2)
-        var errorOrNil: NSError?
         
         let url1 = urls[0].url
         let url2 = urls[1].url
-        EarlGrey.select(elementWithMatcher: grey_accessibilityLabel("History")).perform(grey_tap())
+        tester().waitForView(withAccessibilityIdentifier: "HomePanels.History")
+        tester().tapView(withAccessibilityIdentifier: "HomePanels.History")
         tester().waitForView(withAccessibilityLabel: url1)
         tester().waitForView(withAccessibilityLabel: url2)
-        EarlGrey.select(elementWithMatcher: grey_accessibilityLabel(url1)).assert(grey_notNil())
-        EarlGrey.select(elementWithMatcher: grey_accessibilityLabel(url2)).assert(grey_notNil())
-        
+
         BrowserUtils.clearPrivateData([BrowserUtils.Clearable.History], swipe: false, tester: tester())
-        EarlGrey.select(elementWithMatcher: grey_accessibilityLabel("Bookmarks")).perform(grey_tap())
-        EarlGrey.select(elementWithMatcher: grey_accessibilityLabel("History")).perform(grey_tap())
-        
-        EarlGrey.select(elementWithMatcher: grey_accessibilityLabel(url1))
-            .assert(grey_notNil(), error: &errorOrNil)
-        XCTAssertEqual(GREYInteractionErrorCode(rawValue: errorOrNil!.code),
-        GREYInteractionErrorCode.elementNotFoundErrorCode,
-                       "Expected to have removed history row \(url1)")
-        EarlGrey.select(elementWithMatcher: grey_accessibilityLabel(url2))
-            .assert(grey_notNil(), error: &errorOrNil)
-        XCTAssertEqual(GREYInteractionErrorCode(rawValue: errorOrNil!.code),
-        GREYInteractionErrorCode.elementNotFoundErrorCode,
-                       "Expected to have removed history row \(url2)")
+        tester().tapView(withAccessibilityLabel: "Bookmarks")
+        tester().tapView(withAccessibilityLabel: "History")
+        tester().waitForAbsenceOfView(withAccessibilityLabel: url1)
+        tester().waitForAbsenceOfView(withAccessibilityLabel: url2)
     }
 
     func testDisabledHistoryDoesNotClearHistoryPanel() {
@@ -154,14 +142,14 @@ class ClearPrivateDataTests: KIFTestCase, UITextFieldDelegate {
         XCTAssertEqual(cookies.sessionStorage, "foo=bar")
 
         // Verify that cookies are not cleared when Cookies is deselected.
-        BrowserUtils.clearPrivateData(BrowserUtils.AllClearables.subtracting([BrowserUtils.Clearable.Cookies]), swipe: true, tester: tester())
+        BrowserUtils.clearPrivateData(BrowserUtils.AllClearables.subtracting([BrowserUtils.Clearable.Cookies]), swipe: false, tester: tester())
         cookies = getCookies(webView)
         XCTAssertEqual(cookies.cookie, "foo=bar")
         XCTAssertEqual(cookies.localStorage, "foo=bar")
         XCTAssertEqual(cookies.sessionStorage, "foo=bar")
 
         // Verify that cookies are cleared when Cookies is selected.
-        BrowserUtils.clearPrivateData([BrowserUtils.Clearable.Cookies], swipe: true, tester: tester())
+        BrowserUtils.clearPrivateData([BrowserUtils.Clearable.Cookies], swipe: false, tester: tester())
         cookies = getCookies(webView)
         XCTAssertEqual(cookies.cookie, "")
         XCTAssertEqual(cookies.localStorage, "null")
@@ -181,12 +169,12 @@ class ClearPrivateDataTests: KIFTestCase, UITextFieldDelegate {
         let requests = cachedServer.requests
 
         // Verify that clearing non-cache items will keep the page in the cache.
-        BrowserUtils.clearPrivateData(BrowserUtils.AllClearables.subtracting([BrowserUtils.Clearable.Cache]), swipe: true, tester: tester())
+        BrowserUtils.clearPrivateData(BrowserUtils.AllClearables.subtracting([BrowserUtils.Clearable.Cache]), swipe: false, tester: tester())
         webView.reload()
         XCTAssertEqual(cachedServer.requests, requests)
 
         // Verify that clearing the cache will fire a new request.
-        BrowserUtils.clearPrivateData([BrowserUtils.Clearable.Cache], swipe: true, tester: tester())
+        BrowserUtils.clearPrivateData([BrowserUtils.Clearable.Cache], swipe: false, tester: tester())
         webView.reload()
         XCTAssertEqual(cachedServer.requests, requests + 1)
     }

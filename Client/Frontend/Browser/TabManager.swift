@@ -109,10 +109,6 @@ class TabManager: NSObject {
         NotificationCenter.default.addObserver(self, selector: #selector(TabManager.prefsDidChange), name: UserDefaults.didChangeNotification, object: nil)
     }
 
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-    }
-
     func addNavigationDelegate(_ delegate: WKNavigationDelegate) {
         assert(Thread.isMainThread)
 
@@ -156,8 +152,17 @@ class TabManager: NSObject {
     func getTabFor(_ url: URL) -> Tab? {
         assert(Thread.isMainThread)
 
-        for tab in tabs where tab.webView?.url == url {
-            return tab
+        for tab in tabs {
+            if tab.webView?.url == url {
+                return tab
+            }
+
+            // Also look for tabs that haven't been restored yet.
+            if let sessionData = tab.sessionData,
+                0..<sessionData.urls.count ~= sessionData.currentPage,
+                sessionData.urls[sessionData.currentPage] == url {
+                return tab
+            }
         }
 
         return nil
@@ -173,7 +178,7 @@ class TabManager: NSObject {
 
         // Make sure to wipe the private tabs if the user has the pref turned on
         if shouldClearPrivateTabs(), !(tab?.isPrivate ?? false) {
-            removeAllPrivateTabsAndNotify(false)
+            removeAllPrivateTabs()
         }
 
         if let tab = tab {
@@ -198,7 +203,7 @@ class TabManager: NSObject {
     //This is called by TabTrayVC when the private mode button is pressed and BEFORE we've switched to the new mode
     func willSwitchTabMode() {
         if shouldClearPrivateTabs() && (selectedTab?.isPrivate ?? false) {
-            removeAllPrivateTabsAndNotify(false)
+            removeAllPrivateTabs()
         }
     }
 
@@ -350,17 +355,13 @@ class TabManager: NSObject {
     fileprivate func removeTab(_ tab: Tab, flushToDisk: Bool, notify: Bool) {
         assert(Thread.isMainThread)
 
-        if tab.isPrivate {
-            // Wipe clean data associated with this tab when it is removed.
-            let dataTypes = Set([WKWebsiteDataTypeCookies,
-                                 WKWebsiteDataTypeLocalStorage,
-                                 WKWebsiteDataTypeSessionStorage,
-                                 WKWebsiteDataTypeWebSQLDatabases,
-                                 WKWebsiteDataTypeIndexedDBDatabases])
+        guard let removalIndex = tabs.index(where: { $0 === tab }) else {
+            Sentry.shared.sendWithStacktrace(message: "Could not find index of tab to remove", tag: .tabManager, severity: .fatal, description: "Tab count: \(count)")
+            return
+        }
 
-            tab.webView?.configuration.websiteDataStore.removeData(ofTypes: dataTypes,
-                                                                   modifiedSince: Date.distantPast,
-                                                                   completionHandler: {})
+        if tab.isPrivate {
+            removeAllBrowsingDataForTab(tab)
         }
 
         let oldSelectedTab = selectedTab
@@ -376,9 +377,7 @@ class TabManager: NSObject {
         }
 
         let prevCount = count
-        if let removalIndex = tabs.index(where: { $0 === tab }) {
-            tabs.remove(at: removalIndex)
-        }
+        tabs.remove(at: removalIndex)
 
         let viableTabs: [Tab] = tab.isPrivate ? privateTabs : normalTabs
 
@@ -437,24 +436,28 @@ class TabManager: NSObject {
         }
     }
 
-    /// Removes all private tabs from the manager.
-    /// - Parameter notify: if set to true, the delegate is called when a tab is
-    ///   removed.
-    private func removeAllPrivateTabsAndNotify(_ notify: Bool) {
-        // if there is a selected tab, it needs to be closed last
-        // this is important for TopTabs as otherwise the selection of the new tab
-        // causes problems as it may no longer be present.
-        // without this we get a nasty crash
-        guard let selectedTab = selectedTab,
-            let _ = privateTabs.index(of: selectedTab) else {
-            return privateTabs.forEach({ removeTab($0, flushToDisk: true, notify: notify) })
+    /// Removes all private tabs from the manager without notifying delegates.
+    private func removeAllPrivateTabs() {
+        tabs.forEach { tab in
+            if tab.isPrivate {
+                removeAllBrowsingDataForTab(tab)
+            }
         }
 
-        let nonSelectedTabsForRemoval = privateTabs.filter { $0 != selectedTab }
-        nonSelectedTabsForRemoval.forEach({ removeTab($0, flushToDisk: true, notify: notify) })
-        removeTab(selectedTab, flushToDisk: true, notify: notify)
+        tabs = tabs.filter { !$0.isPrivate }
     }
-    
+
+    func removeAllBrowsingDataForTab(_ tab: Tab, completionHandler: @escaping () -> Void = {}) {
+        let dataTypes = Set([WKWebsiteDataTypeCookies,
+                             WKWebsiteDataTypeLocalStorage,
+                             WKWebsiteDataTypeSessionStorage,
+                             WKWebsiteDataTypeWebSQLDatabases,
+                             WKWebsiteDataTypeIndexedDBDatabases])
+        tab.webView?.configuration.websiteDataStore.removeData(ofTypes: dataTypes,
+                                                               modifiedSince: Date.distantPast,
+                                                               completionHandler: completionHandler)
+    }
+
     func removeTabsWithUndoToast(_ tabs: [Tab]) {
         tempTabs = tabs
         var tabsCopy = tabs
@@ -665,7 +668,7 @@ extension TabManager {
             let unarchiver = NSKeyedUnarchiver(forReadingWith: tabData)
             unarchiver.decodingFailurePolicy = .setErrorAndReturn
             guard let tabs = unarchiver.decodeObject(forKey: "tabs") as? [SavedTab] else {
-                SentryIntegration.shared.send(message: "Failed to restore tabs: \(unarchiver.error ??? "nil")", tag: "TabManager", severity: .error)
+                Sentry.shared.send(message: "Failed to restore tabs", tag: SentryTag.tabManager, severity: .error, description: "\(unarchiver.error ??? "nil")")
                 return nil
             }
             return tabs
@@ -709,14 +712,18 @@ extension TabManager {
         _ = Try(withTry: { () -> Void in
             self.preserveTabsInternal()
             }) { (exception) -> Void in
-            print("Failed to preserve tabs: \(exception ??? "nil")")
-            SentryIntegration.shared.send(message: "Failed to preserve tabs: \(exception ??? "nil")", tag: "TabManager", severity: .error)
+            Sentry.shared.send(message: "Failed to preserve tabs", tag: SentryTag.tabManager, severity: .error, description: "\(exception ??? "nil")")
         }
     }
 
     fileprivate func restoreTabsInternal() {
-        guard let savedTabs = TabManager.tabsToRestore() else {
+        guard var savedTabs = TabManager.tabsToRestore() else {
             return
+        }
+
+        // Make sure to wipe the private tabs if the user has the pref turned on
+        if shouldClearPrivateTabs() {
+            savedTabs = savedTabs.filter { !$0.isPrivate }
         }
 
         var tabToSelect: Tab?
@@ -780,8 +787,7 @@ extension TabManager {
                     self.restoreTabsInternal()
                 },
                 catch: { exception in
-                    print("Failed to restore tabs: \(exception ??? "nil")")
-                    SentryIntegration.shared.send(message: "Failed to restore tabs: \(exception ??? "nil")", tag: "TabManager", severity: .error)
+                    Sentry.shared.send(message: "Failed to restore tabs: ", tag: SentryTag.tabManager, severity: .error, description: "\(exception ??? "nil")")
                 }
             )
         }
@@ -809,7 +815,7 @@ extension TabManager {
     }
 }
 
-extension TabManager : WKNavigationDelegate {
+extension TabManager: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         UIApplication.shared.isNetworkActivityIndicatorVisible = true
     }
@@ -951,15 +957,20 @@ class TabManagerNavDelegate: NSObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView,
                  decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-            var res = WKNavigationResponsePolicy.allow
-            for delegate in delegates {
-                delegate.webView?(webView, decidePolicyFor: navigationResponse, decisionHandler: { policy in
-                    if policy == .cancel {
-                        res = policy
-                    }
-                })
-            }
+        var res = WKNavigationResponsePolicy.allow
+        for delegate in delegates {
+            delegate.webView?(webView, decidePolicyFor: navigationResponse, decisionHandler: { policy in
+                if policy == .cancel {
+                    res = policy
+                }
+            })
+        }
 
-            decisionHandler(res)
+        if res == .allow, let appDelegate = UIApplication.shared.delegate as? AppDelegate {
+            let tab = appDelegate.browserViewController.tabManager[webView]
+            tab?.mimeType = navigationResponse.response.mimeType
+        }
+
+        decisionHandler(res)
     }
 }

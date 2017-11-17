@@ -2,18 +2,29 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import Alamofire
-import Foundation
+// IMPORTANT!: Please take into consideration when adding new imports to
+// this file that it is utilized by external components besides the core
+// application (i.e. App Extensions). Introducing new dependencies here
+// may have unintended negative consequences for App Extensions such as
+// increased startup times which may lead to termination by the OS.
 import Account
-import ReadingList
 import Shared
 import Storage
 import Sync
 import XCGLogger
 import SwiftKeychainWrapper
 import Deferred
-import SwiftyJSON
-import SyncTelemetry
+
+// Import these dependencies ONLY for the main `Client` application target.
+#if MOZ_TARGET_CLIENT
+    import SwiftyJSON
+    import SyncTelemetry
+#endif
+
+// Import these dependencies for ALL targets *EXCEPT* `NotificationService`.
+#if !MOZ_TARGET_NOTIFICATIONSERVICE
+    import ReadingList
+#endif
 
 private let log = Logger.syncLogger
 
@@ -118,11 +129,14 @@ protocol Profile: class {
     var metadata: Metadata { get }
     var recommendations: HistoryRecommendations { get }
     var favicons: Favicons { get }
-    var readingList: ReadingListService? { get }
     var logins: BrowserLogins & SyncableLogins & ResettableSyncStorage { get }
     var certStore: CertStore { get }
     var recentlyClosedTabs: ClosedTabsStore { get }
     var panelDataObservers: PanelDataObservers { get }
+
+    #if !MOZ_TARGET_NOTIFICATIONSERVICE
+        var readingList: ReadingListService? { get }
+    #endif
 
     var isShutdown: Bool { get }
     
@@ -330,8 +344,6 @@ open class BrowserProfile: Profile {
     deinit {
         log.debug("Deiniting profile \(self.localName).")
         self.syncManager.endTimedSyncs()
-        NotificationCenter.default.removeObserver(self, name: NotificationOnLocationChange, object: nil)
-        NotificationCenter.default.removeObserver(self, name: NotificationOnPageMetadataFetched, object: nil)
     }
 
     func localName() -> String {
@@ -400,9 +412,11 @@ open class BrowserProfile: Profile {
         return self.makePrefs()
     }()
 
-    lazy var readingList: ReadingListService? = {
-        return ReadingListService(profileStoragePath: self.files.rootPath as String)
-    }()
+    #if !MOZ_TARGET_NOTIFICATIONSERVICE
+        lazy var readingList: ReadingListService? = {
+            return ReadingListService(profileStoragePath: self.files.rootPath as String)
+        }()
+    #endif
 
     lazy var remoteClientsAndTabs: RemoteClientsAndTabs & ResettableSyncStorage & AccountRemovalDelegate & RemoteDevices = {
         return SQLiteRemoteClientsAndTabs(db: self.db)
@@ -450,7 +464,7 @@ open class BrowserProfile: Profile {
                 return
             }
             
-            account.notify(deviceIDs: deviceIDs, collectionsChanged: ["clients"])
+            account.notify(deviceIDs: deviceIDs, collectionsChanged: ["clients"], reason: "sendtab")
         }
         
         return self.remoteClientsAndTabs.insertCommands(commands, forClients: clients) >>> {
@@ -635,13 +649,18 @@ open class BrowserProfile: Profile {
 
             syncDisplayState = SyncStatusResolver(engineResults: result.engineResults).resolveResults()
 
-            if AppInfo.isApplication {
+            #if MOZ_TARGET_CLIENT
                 if let account = profile.account, canSendUsageData() {
-                    sendSyncPing(account: account, result: result)
+                    SyncPing.from(result: result,
+                                  account: account,
+                                  remoteClientsAndTabs: profile.remoteClientsAndTabs,
+                                  prefs: prefs,
+                                  why: .schedule) >>== { SyncTelemetry.send(ping: $0, docType: .sync) }
                 } else {
                     log.debug("Profile isn't sending usage data. Not sending sync status event.")
                 }
-            }
+            #endif
+
             // Dont notify if we are performing a sync in the background. This prevents more db access from happening
             if !self.backgrounded {
                 notifySyncing(notification: NotificationProfileDidFinishSyncing)
@@ -651,14 +670,6 @@ open class BrowserProfile: Profile {
 
         func canSendUsageData() -> Bool {
             return profile.prefs.boolForKey(AppConstants.PrefSendUsageData) ?? true
-        }
-
-        private func sendSyncPing(account: FirefoxAccount, result: SyncOperationResult) {
-            SyncPing.from(result: result,
-                          account: account,
-                          remoteClientsAndTabs: self.profile.remoteClientsAndTabs,
-                          prefs: self.prefs,
-                          why: .schedule) >>== { SyncTelemetry.send(ping: $0, docType: .sync) }
         }
 
         private func notifySyncing(notification: Notification.Name) {
@@ -680,64 +691,60 @@ open class BrowserProfile: Profile {
         }
 
         func onBookmarkBufferValidated(notification: NSNotification) {
-            // We don't send this ad hoc telemetry on the release channel.
-            guard AppConstants.BuildChannel != AppBuildChannel.release else {
-                return
-            }
+            #if MOZ_TARGET_CLIENT
+                // We don't send this ad hoc telemetry on the release channel.
+                guard AppConstants.BuildChannel != AppBuildChannel.release else {
+                    return
+                }
 
-            guard profile.prefs.boolForKey(AppConstants.PrefSendUsageData) ?? true else {
-                log.debug("Profile isn't sending usage data. Not sending bookmark event.")
-                return
-            }
+                guard profile.prefs.boolForKey(AppConstants.PrefSendUsageData) ?? true else {
+                    log.debug("Profile isn't sending usage data. Not sending bookmark event.")
+                    return
+                }
 
-            guard let validations = (notification.object as? Box<[String: Bool]>)?.value else {
-                log.warning("Notification didn't have validations.")
-                return
-            }
+                guard let validations = (notification.object as? Box<[String: Bool]>)?.value else {
+                    log.warning("Notification didn't have validations.")
+                    return
+                }
 
-            let attempt: Int32 = self.prefs.intForKey("bookmarkvalidationattempt") ?? 1
-            self.prefs.setInt(attempt + 1, forKey: "bookmarkvalidationattempt")
+                let attempt: Int32 = self.prefs.intForKey("bookmarkvalidationattempt") ?? 1
+                self.prefs.setInt(attempt + 1, forKey: "bookmarkvalidationattempt")
 
-            // Capture the buffer count ASAP, not in the delayed op, because the merge could wipe it!
-            let bufferRows = (self.profile.bookmarks as? MergedSQLiteBookmarks)?.synchronousBufferCount()
+                // Capture the buffer count ASAP, not in the delayed op, because the merge could wipe it!
+                let bufferRows = (self.profile.bookmarks as? MergedSQLiteBookmarks)?.synchronousBufferCount()
 
-            self.doInBackgroundAfter(300) {
-                self.profile.remoteClientsAndTabs.getClientGUIDs() >>== { clients in
-                    // We would love to include the version and OS etc. of each remote client,
-                    // but we don't store that information. For now, just do a count.
-                    let clientCount = clients.count
+                self.doInBackgroundAfter(300) {
+                    self.profile.remoteClientsAndTabs.getClientGUIDs() >>== { clients in
+                        // We would love to include the version and OS etc. of each remote client,
+                        // but we don't store that information. For now, just do a count.
+                        let clientCount = clients.count
 
-                    let id = DeviceInfo.clientIdentifier(self.prefs)
-                    let ping = makeAdHocBookmarkMergePing(Bundle.main, clientID: id, attempt: attempt, bufferRows: bufferRows, valid: validations, clientCount: clientCount)
-                    let payload = ping.stringValue
+                        let id = DeviceInfo.clientIdentifier(self.prefs)
+                        let ping = makeAdHocBookmarkMergePing(Bundle.main, clientID: id, attempt: attempt, bufferRows: bufferRows, valid: validations, clientCount: clientCount)
+                        let payload = ping.stringValue
 
-                    log.debug("Payload is: \(payload)")
-                    guard let body = payload.data(using: String.Encoding.utf8) else {
-                        log.debug("Invalid JSON!")
-                        return
-                    }
+                        log.debug("Payload is: \(payload)")
+                        guard let body = payload.data(using: String.Encoding.utf8) else {
+                            log.debug("Invalid JSON!")
+                            return
+                        }
 
-                    let url = "https://mozilla-anonymous-sync-metrics.moo.mx/post/bookmarkvalidation".asURL!
-                    var request = URLRequest(url: url)
-                    request.httpMethod = "POST"
-                    request.httpBody = body
-                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                        guard let url = URL(string: "https://mozilla-anonymous-sync-metrics.moo.mx/post/bookmarkvalidation") else {
+                            return
+                        }
 
-                    SessionManager.default.request(request).responseData { response in
-                        log.debug("Bookmark validation upload response: \(response.response?.statusCode ?? -1).")
+                        var request = URLRequest(url: url)
+                        request.httpMethod = "POST"
+                        request.httpBody = body
+                        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+                        URLSession.shared.dataTask(with: request) { data, response, error in
+                            let httpResponse = response as? HTTPURLResponse
+                            log.debug("Bookmark validation upload response: \(httpResponse?.statusCode ?? -1).")
+                        }
                     }
                 }
-            }
-        }
-
-        deinit {
-            // Remove 'em all.
-            let center = NotificationCenter.default
-            center.removeObserver(self, name: NotificationDatabaseWasRecreated, object: nil)
-            center.removeObserver(self, name: NotificationDataLoginDidChange, object: nil)
-            center.removeObserver(self, name: NotificationProfileDidStartSyncing, object: nil)
-            center.removeObserver(self, name: NotificationProfileDidFinishSyncing, object: nil)
-            center.removeObserver(self, name: NotificationBookmarkBufferValidated, object: nil)
+            #endif
         }
 
         private func handleRecreationOfDatabaseNamed(name: String?) -> Success {
@@ -1089,13 +1096,42 @@ open class BrowserProfile: Profile {
             }
         }
 
+        func engineEnablementChangesForAccount(account: FirefoxAccount, profile: Profile) -> [String: Bool]? {
+            var enginesEnablements: [String: Bool] = [:]
+            // We just created the account, the user went through the Choose What to Sync screen on FxA.
+            if let declined = account.declinedEngines {
+                declined.forEach { enginesEnablements[$0] = false }
+                account.declinedEngines = nil
+                // Persist account changes so we don't try to decline engines on the next sync.
+                profile.flushAccount()
+            } else {
+                // Bundle in authState the engines the user activated/disabled since the last sync.
+                TogglableEngines.forEach { engine in
+                    let stateChangedPref = "engine.\(engine).enabledStateChanged"
+                    if let _ = self.prefsForSync.boolForKey(stateChangedPref),
+                        let enabled = self.prefsForSync.boolForKey("engine.\(engine).enabled") {
+                        enginesEnablements[engine] = enabled
+                        self.prefsForSync.setObject(nil, forKey: stateChangedPref)
+                    }
+                }
+            }
+            return enginesEnablements
+        }
+
         // This SHOULD NOT be called directly: use syncSeveral instead.
         fileprivate func syncWith(synchronizers: [(EngineIdentifier, SyncFunction)],
                                   account: FirefoxAccount,
                                   statsSession: SyncOperationStatsSession, why: SyncReason) -> Deferred<Maybe<[(EngineIdentifier, SyncStatus)]>> {
             log.info("Syncing \(synchronizers.map { $0.0 })")
-            let authState = account.syncAuthState
+            var authState = account.syncAuthState
             let delegate = self.profile.getSyncDelegate()
+            if let enginesEnablements = self.engineEnablementChangesForAccount(account: account, profile: profile),
+               !enginesEnablements.isEmpty {
+                authState?.enginesEnablements = enginesEnablements
+                log.debug("engines to enable: \(enginesEnablements.flatMap { $0.value ? $0.key : nil })")
+                log.debug("engines to disable: \(enginesEnablements.flatMap { !$0.value ? $0.key : nil })")
+            }
+
             let readyDeferred = SyncStateMachine(prefs: self.prefsForSync).toReady(authState!)
 
             let function: (SyncDelegate, Prefs, Ready) -> Deferred<Maybe<[EngineStatus]>> = { delegate, syncPrefs, ready in
@@ -1109,6 +1145,12 @@ open class BrowserProfile: Profile {
             }
             
             return readyDeferred >>== self.takeActionsOnEngineStateChanges >>== { ready in
+                let updateEnginePref: ((String, Bool) -> Void) = { engine, enabled in
+                    self.prefsForSync.setBool(enabled, forKey: "engine.\(engine).enabled")
+                }
+                ready.engineConfiguration?.enabled.forEach { updateEnginePref($0, true) }
+                ready.engineConfiguration?.declined.forEach { updateEnginePref($0, false) }
+
                 statsSession.start()
                 return function(delegate, self.prefsForSync, ready)
             }
@@ -1227,18 +1269,18 @@ open class BrowserProfile: Profile {
             var description = "No account."
         }
 
-        public func notify(deviceIDs: [GUID], collectionsChanged collections: [String]) -> Success {
+        public func notify(deviceIDs: [GUID], collectionsChanged collections: [String], reason: String) -> Success {
             guard let account = self.profile.account else {
                 return deferMaybe(NoAccountError())
             }
-            return account.notify(deviceIDs: deviceIDs, collectionsChanged: collections)
+            return account.notify(deviceIDs: deviceIDs, collectionsChanged: collections, reason: reason)
         }
 
-        public func notifyAll(collectionsChanged collections: [String]) -> Success {
+        public func notifyAll(collectionsChanged collections: [String], reason: String) -> Success {
             guard let account = self.profile.account else {
                 return deferMaybe(NoAccountError())
             }
-            return account.notifyAll(collectionsChanged: collections)
+            return account.notifyAll(collectionsChanged: collections, reason: reason)
         }
     }
 }

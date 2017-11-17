@@ -10,9 +10,7 @@ import Telemetry
 //
 class UnifiedTelemetry {
     init(profile: Profile) {
-        if AppConstants.BuildChannel == .beta {
-          NotificationCenter.default.addObserver(self, selector: #selector(uploadError(notification:)), name: Telemetry.notificationUploadError, object: nil)
-        }
+        NotificationCenter.default.addObserver(self, selector: #selector(uploadError(notification:)), name: Telemetry.notificationReportError, object: nil)
 
         let telemetryConfig = Telemetry.default.configuration
         telemetryConfig.appName = "Fennec"
@@ -24,7 +22,7 @@ class UnifiedTelemetry {
         telemetryConfig.isUploadEnabled = sendUsageData
 
         let prefs = profile.prefs
-        Telemetry.default.beforeSerializePing(pingType: CorePingBuilder.PingType) { (inputDict) -> [String : Any?] in
+        Telemetry.default.beforeSerializePing(pingType: CorePingBuilder.PingType) { (inputDict) -> [String: Any?] in
             var outputDict = inputDict // make a mutable copy
             if let newTabChoice = prefs.stringForKey(NewTabAccessors.PrefKey) {
                 outputDict["defaultNewTabExperience"] = newTabChoice as AnyObject?
@@ -39,8 +37,8 @@ class UnifiedTelemetry {
     }
 
     @objc func uploadError(notification: NSNotification) {
-        guard let error = notification.userInfo?["error"] as? NSError else { return }
-        SentryIntegration.shared.send(message: error.localizedDescription, tag: "UnifiedTelemetry", severity: .info)
+        guard !DeviceInfo.isSimulator(), let error = notification.userInfo?["error"] as? NSError else { return }
+        Sentry.shared.send(message: "Upload Error", tag: SentryTag.unifiedTelemetry, severity: .info, description: error.debugDescription)
     }
 }
 

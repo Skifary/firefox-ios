@@ -32,7 +32,7 @@ private struct ShareDialogControllerUX {
     static let NavigationBarTintColor = UIColor(rgb: 0xf37c00)                                      // Tint color changes the text color in the navigation bar
     static let NavigationBarCancelButtonFont = UIFont.systemFont(ofSize: UIFont.buttonFontSize)     // System default
     static let NavigationBarAddButtonFont = UIFont.boldSystemFont(ofSize: UIFont.buttonFontSize)    // System default
-    static let NavigationBarIconSize = 38                                                           // Width and height of the icon
+    static let NavigationBarIconSize = 40                                                           // Width and height of the icon
     static let NavigationBarBottomPadding = 12
 
     static let ItemTitleFontMedium = UIFont.systemFont(ofSize: 15, weight: UIFontWeightMedium)
@@ -54,7 +54,7 @@ private struct ShareDialogControllerUX {
     static let TableRowHeight: CGFloat = 44                                                         // System default
     static let TableRowFont = UIFont.systemFont(ofSize: 14)
     static let TableRowFontMinScale: CGFloat = 0.8
-    static let TableRowTintColor = UIColor(red:0.427, green:0.800, blue:0.102, alpha:1.0)           // Green tint for the checkmark
+    static let TableRowTintColor = UIColor(red: 0.427, green: 0.800, blue: 0.102, alpha: 1.0)           // Green tint for the checkmark
     static let TableRowTextColor = UIColor(rgb: 0x555555)
 
     static let TableHeight = 88                                                                     // Height of 2 standard 44px cells
@@ -101,8 +101,7 @@ class ShareDialogController: UIViewController, UITableViewDataSource, UITableVie
         navItem.rightBarButtonItem = UIBarButtonItem(title: NSLocalizedString("Add", tableName: "ShareTo", comment: "Add button in the share dialog"), style: UIBarButtonItemStyle.done, target: self, action: #selector(ShareDialogController.add))
         navItem.rightBarButtonItem?.setTitleTextAttributes([NSFontAttributeName: ShareDialogControllerUX.NavigationBarAddButtonFont], for: UIControlState())
 
-        let logo = UIImageView(frame: CGRect(x: 0, y: 0, width: ShareDialogControllerUX.NavigationBarIconSize, height: ShareDialogControllerUX.NavigationBarIconSize))
-        logo.image = UIImage(named: "Icon-Small")
+        let logo = UIImageView(image: UIImage(named: "Icon-Small"))
         logo.contentMode = UIViewContentMode.scaleAspectFit // TODO Can go away if icon is provided in correct size
         navItem.titleView = logo
 

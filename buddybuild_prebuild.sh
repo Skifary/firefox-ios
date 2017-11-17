@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+chruby 2.3.1
+bundle install  
+bundle exec danger --fail-on-errors=false  
+
 #
 # Add our Adjust keys to the build depending on the scheme. We use the sandbox for beta so
 # that we have some insight in beta usage.
@@ -24,18 +28,22 @@ if [ "$BUDDYBUILD_SCHEME" != "Firefox" ]; then
 fi
 
 #
-# Leanplum is set to production for all builds. Only Fennec locally will use
-# development settings, because those are not intended to ship to actual users.
+# Leanplum is included only for the Firefox and FirefoxBeta builds.
 #
 
-echo "Setting Leanplum environment to PRODUCTION for $BUDDYBUILD_SCHEME"
-/usr/libexec/PlistBuddy -c "Set LeanplumAppId $LEANPLUM_APP_ID" "Client/Info.plist"
-/usr/libexec/PlistBuddy -c "Set LeanplumEnvironment production" "Client/Info.plist"
-/usr/libexec/PlistBuddy -c "Set LeanplumKey $LEANPLUM_KEY_PRODUCTION" "Client/Info.plist"
+if [ "$BUDDYBUILD_SCHEME" = "Firefox" ] || [ "$BUDDYBUILD_SCHEME" = "FirefoxBeta" ]; then
+  echo "Setting Leanplum environment to PRODUCTION for $BUDDYBUILD_SCHEME"
+  /usr/libexec/PlistBuddy -c "Set LeanplumAppId $LEANPLUM_APP_ID" "Client/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set LeanplumEnvironment production" "Client/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set LeanplumKey $LEANPLUM_KEY_PRODUCTION" "Client/Info.plist"
+fi
 
 echo "Setting up Pocket Stories API Key"
-/usr/libexec/PlistBuddy -c "Set PocketEnvironmentAPIKey $POCKET_API_KEY" "Client/Info.plist"
-
+if [ "$BUDDYBUILD_SCHEME" == Firefox ]; then
+  /usr/libexec/PlistBuddy -c "Set PocketEnvironmentAPIKey $POCKET_PRODUCTION_API_KEY" "Client/Info.plist"
+else
+  /usr/libexec/PlistBuddy -c "Set PocketEnvironmentAPIKey $POCKET_STAGING_API_KEY" "Client/Info.plist"
+fi
 
 #
 # Setup Sentry. We have different DSNs for Beta and Production.

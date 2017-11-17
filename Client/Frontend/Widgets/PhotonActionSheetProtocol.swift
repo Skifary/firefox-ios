@@ -112,23 +112,19 @@ extension PhotonActionSheetProtocol {
     func getTabActions(tab: Tab, buttonView: UIView,
                        presentShareMenu: @escaping (URL, Tab, UIView, UIPopoverArrowDirection) -> Void,
                        findInPage:  @escaping () -> Void,
-                       presentableVC: PresentableVC) -> Array<[PhotonActionSheetItem]> {
+                       presentableVC: PresentableVC,
+                       success: @escaping (String) -> Void) -> Array<[PhotonActionSheetItem]> {
         
         let toggleActionTitle = tab.desktopSite ? Strings.AppMenuViewMobileSiteTitleString : Strings.AppMenuViewDesktopSiteTitleString
         let toggleDesktopSite = PhotonActionSheetItem(title: toggleActionTitle, iconString: "menu-RequestDesktopSite") { action in
             tab.toggleDesktopSite()
         }
         
-        let setHomePage = PhotonActionSheetItem(title: Strings.AppMenuSetHomePageTitleString, iconString: "menu-Home") { action in
-            HomePageHelper(prefs: self.profile.prefs).setHomePage(toTab: tab, presentAlertOn: presentableVC)
-        }
-        
         let addReadingList = PhotonActionSheetItem(title: Strings.AppMenuAddToReadingListTitleString, iconString: "addToReadingList") { action in
-            guard let tab = self.tabManager.selectedTab else { return }
             guard let url = tab.url?.displayURL else { return }
 
             self.profile.readingList?.createRecordWithURL(url.absoluteString, title: tab.title ?? "", addedBy: UIDevice.current.name)
-            self.showToast(text: Strings.AppMenuAddToReadingListConfirmMessage)
+            success(Strings.AppMenuAddToReadingListConfirmMessage)
         }
 
         let findInPageAction = PhotonActionSheetItem(title: Strings.AppMenuFindInPageTitleString, iconString: "menu-FindInPage") { action in
@@ -149,7 +145,7 @@ extension PhotonActionSheetProtocol {
                                                                                 withUserData: userData,
                                                                                 toApplication: UIApplication.shared)
             tab.isBookmarked = true
-            self.showToast(text: Strings.AppMenuAddBookmarkConfirmMessage)
+            success(Strings.AppMenuAddBookmarkConfirmMessage)
         }
         
         let removeBookmark = PhotonActionSheetItem(title: Strings.AppMenuRemoveBookmarkTitleString, iconString: "menu-Bookmark-Remove") { action in
@@ -160,7 +156,7 @@ extension PhotonActionSheetProtocol {
                 $0.removeByURL(absoluteString).uponQueue(.main) { res in
                     if res.isSuccess {
                         tab.isBookmarked = false
-                        self.showToast(text: Strings.AppMenuRemoveBookmarkConfirmMessage)
+                        success(Strings.AppMenuRemoveBookmarkConfirmMessage)
                     }
                 }
             }
@@ -180,29 +176,47 @@ extension PhotonActionSheetProtocol {
                 _ = self.profile.history.addPinnedTopSite(site).value
             }
         }
+
+        let sendToDevice = PhotonActionSheetItem(title: Strings.SendToDeviceTitle, iconString: "menu-Send-to-Device") { action in
+            guard let bvc = presentableVC as? PresentableVC & InstructionsViewControllerDelegate & ClientPickerViewControllerDelegate else { return }
+            if !self.profile.hasAccount() {
+                let instructionsViewController = InstructionsViewController()
+                instructionsViewController.delegate = bvc
+                let navigationController = UINavigationController(rootViewController: instructionsViewController)
+                bvc.present(navigationController, animated: true, completion: nil)
+                return
+            }
+
+            let clientPickerViewController = ClientPickerViewController()
+            clientPickerViewController.clientPickerDelegate = bvc
+            clientPickerViewController.profile = self.profile
+            clientPickerViewController.profileNeedsShutdown = false
+            let navigationController = UINavigationController(rootViewController: clientPickerViewController)
+            bvc.present(navigationController, animated: true, completion: nil)
+        }
         
         let share = PhotonActionSheetItem(title: Strings.AppMenuSharePageTitleString, iconString: "action_share") { action in
-            guard let tab = self.tabManager.selectedTab else { return }
             guard let url = tab.canonicalURL?.displayURL else { return }
             presentShareMenu(url, tab, buttonView, .up)
         }
 
         let copyURL = PhotonActionSheetItem(title: Strings.AppMenuCopyURLTitleString, iconString: "menu-Copy-Link") { _ in
-            UIPasteboard.general.url = self.tabManager.selectedTab?.canonicalURL?.displayURL
-            self.showToast(text: Strings.AppMenuCopyURLConfirmMessage)
+            UIPasteboard.general.url = tab.canonicalURL?.displayURL
+            success(Strings.AppMenuCopyURLConfirmMessage)
         }
-        
-        let bookmarkAction = tab.isBookmarked ? removeBookmark : bookmarkPage
-        var topActions = [bookmarkAction]
-        if let tab = self.tabManager.selectedTab, tab.readerModeAvailableOrActive {
-            topActions.append(addReadingList)
+
+        var topActions: [PhotonActionSheetItem] = []
+
+        // Disable bookmarking and reading list if the URL is too long.
+        if !tab.urlIsTooLong {
+            topActions.append(tab.isBookmarked ? removeBookmark : bookmarkPage)
+
+            if tab.readerModeAvailableOrActive {
+                topActions.append(addReadingList)
+            }
         }
-        
-        return [topActions, [copyURL, findInPageAction, toggleDesktopSite, pinToTopSites, setHomePage], [share]]
-    }
-    
-    private func showToast(text:String) {
-        SimpleToast().showAlertWithText(text)
+
+        return [topActions, [copyURL, findInPageAction, toggleDesktopSite, pinToTopSites, sendToDevice], [share]]
     }
 }
 

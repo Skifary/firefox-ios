@@ -40,9 +40,7 @@ class AuthenticationTests: KIFTestCase {
         tester().waitForWebViewElementWithAccessibilityLabel("logged in")
 
         // Save the credentials.
-        EarlGrey.select(elementWithMatcher: grey_accessibilityLabel("Save Login"))
-            .inRoot(grey_kindOfClass(NSClassFromString("Client.SnackButton")!))
-            .perform(grey_tap())
+        tester().tapView(withAccessibilityIdentifier: "SaveLoginPrompt.saveLoginButton")
         
         logOut()
         loadAuthPage()
@@ -54,9 +52,16 @@ class AuthenticationTests: KIFTestCase {
         tester().waitForWebViewElementWithAccessibilityLabel("logged in")
 
         // Add a private tab.
-        EarlGrey.select(elementWithMatcher:grey_accessibilityLabel("Menu")).perform(grey_tap())
-        EarlGrey.select(elementWithMatcher:grey_accessibilityLabel("New Private Tab"))
-            .inRoot(grey_kindOfClass(NSClassFromString("Client.MenuItemCollectionViewCell")!))
+        if BrowserUtils.iPad() {
+            EarlGrey.select(elementWithMatcher:grey_accessibilityID("TopTabsViewController.tabsButton"))
+                .perform(grey_tap())
+        } else {
+            EarlGrey.select(elementWithMatcher:grey_accessibilityID("TabToolbar.tabsButton"))
+                .perform(grey_tap())
+        }
+        EarlGrey.select(elementWithMatcher:grey_accessibilityID("TabTrayController.maskButton"))
+            .perform(grey_tap())
+        EarlGrey.select(elementWithMatcher:grey_accessibilityID("TabTrayController.addTabButton"))
             .perform(grey_tap())
         loadAuthPage()
 

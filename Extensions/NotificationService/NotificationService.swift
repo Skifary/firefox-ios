@@ -7,18 +7,9 @@ import Storage
 import Sync
 import UserNotifications
 
-private let log = Logger.browserLogger
-
-private let CategorySentTab = "org.mozilla.ios.SentTab.placeholder"
-
-private let sentryTag = "NotificationService"
-
 class NotificationService: UNNotificationServiceExtension {
-    var display: SyncDataDisplay!
-    lazy var profile: ExtensionProfile = {
-        let profile = ExtensionProfile(localName: "profile")
-        return profile
-    }()
+    var display: SyncDataDisplay?
+    var profile: ExtensionProfile?
 
     // This is run when an APNS notification with `mutable-content` is received.
     // If the app is backgrounded, then the alert notification is displayed.
@@ -27,19 +18,24 @@ class NotificationService: UNNotificationServiceExtension {
     // Once the notification is tapped, then the same userInfo is passed to the same method in the AppDelegate.
     override func didReceive(_ request: UNNotificationRequest, withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
         let userInfo = request.content.userInfo
-        if Logger.logPII && log.isEnabledFor(level: .info) {
-            // This will be visible in the Console.app when a push notification is received.
-            NSLog("NotificationService APNS NOTIFICATION \(userInfo)")
-        }
 
         guard let content = (request.content.mutableCopy() as? UNMutableNotificationContent) else {
-            SentryIntegration.shared.sendWithStacktrace(message: "No notification content", tag: sentryTag)
+            return self.didFinish(PushMessage.accountVerified)
+        }
+
+        if self.profile == nil {
+            self.profile = ExtensionProfile(localName: "profile")
+        }
+
+        guard let profile = self.profile else {
+            self.didFinish(with: .noProfile)
             return
         }
 
-        let queue = self.profile.queue
-        self.display = SyncDataDisplay(content: content, contentHandler: contentHandler, tabQueue: queue)
-        self.profile.syncDelegate = display
+        let queue = profile.queue
+        let display = SyncDataDisplay(content: content, contentHandler: contentHandler, tabQueue: queue)
+        self.display = display
+        profile.syncDelegate = display
 
         let handler = FxAPushMessageHandler(with: profile)
 
@@ -49,7 +45,12 @@ class NotificationService: UNNotificationServiceExtension {
     }
 
     func didFinish(_ what: PushMessage? = nil, with error: PushMessageError? = nil) {
-        profile.shutdown()
+        profile?.shutdown()
+
+        guard let display = self.display else {
+            return
+        }
+
         // We cannot use tabqueue after the profile has shutdown;
         // however, we can't use weak references, because TabQueue isn't a class.
         // Rather than changing tabQueue, we manually nil it out here.
@@ -57,8 +58,7 @@ class NotificationService: UNNotificationServiceExtension {
         display.messageDelivered = false
         display.displayNotification(what, with: error)
         if !display.messageDelivered {
-            let string = "Empty notification: message=\(what?.messageType.rawValue ?? "nil"), error=\(error?.description ?? "nil")"
-            SentryIntegration.shared.send(message: string, tag: sentryTag)
+            display.displayUnknownMessageNotification()
         }
     }
 
@@ -86,11 +86,6 @@ class SyncDataDisplay {
 
     func displayNotification(_ message: PushMessage? = nil, with error: PushMessageError? = nil) {
         guard let message = message, error == nil else {
-            if let error = error {
-                SentryIntegration.shared.send(message: "PushMessageError: \(error.description)", tag: sentryTag)
-            } else {
-                SentryIntegration.shared.send(message: "PushMessage: nil message", tag: sentryTag)
-            }
             return displayUnknownMessageNotification()
         }
 
@@ -152,7 +147,6 @@ extension SyncDataDisplay {
         } else {
             presentNotification(title: Strings.SentTab_NoTabArrivingNotification_title, body: Strings.SentTab_NoTabArrivingNotification_body)
         }
-        SentryIntegration.shared.sendWithStacktrace(message: "Unknown notification message", tag: sentryTag)
     }
 }
 
@@ -161,7 +155,7 @@ extension SyncDataDisplay {
         // We will need to be more precise about calling these SentTab alerts
         // once we are a) detecting different types of notifications and b) adding actions.
         // For now, we need to add them so we can handle zero-tab sent-tab-notifications.
-        notificationContent.categoryIdentifier = CategorySentTab
+        notificationContent.categoryIdentifier = "org.mozilla.ios.SentTab.placeholder"
 
         var userInfo = notificationContent.userInfo
 
@@ -171,7 +165,7 @@ extension SyncDataDisplay {
             return [
                 "title": t.title,
                 "url": t.url.absoluteString,
-                "displayURL": t.url.absoluteDisplayString,
+                "displayURL": t.url.absoluteDisplayExternalString,
                 "deviceName": t.deviceName as Any,
                 ] as NSDictionary
         }
@@ -186,12 +180,9 @@ extension SyncDataDisplay {
 
         let center = UNUserNotificationCenter.current()
         center.getDeliveredNotifications { notifications in
-
-            SentryIntegration.shared.send(message: "deliveredNotification count = \(notifications.count)", tag: sentryTag)
-
             // Let's deal with sent-tab-notifications
             let sentTabNotifications = notifications.filter {
-                $0.request.content.categoryIdentifier == CategorySentTab
+                $0.request.content.categoryIdentifier == self.notificationContent.categoryIdentifier
             }
 
             // We can delete zero tab sent-tab-notifications

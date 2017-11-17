@@ -16,13 +16,22 @@ extension SQLiteHistory: HistoryRecommendations {
         " FROM \(ViewHistoryVisits)" +
         " GROUP BY \(ViewHistoryVisits).domain_id) AS domains ON domains.domain_id = \(TableHistory).domain_id"
 
+    static let urisForSimpleSyncedBookmarks =
+        "SELECT bmkUri FROM \(TableBookmarksBuffer) WHERE server_modified > ? AND is_deleted = 0 " +
+        "UNION ALL " +
+        "SELECT bmkUri FROM \(TableBookmarksLocal) WHERE local_modified > ? AND is_deleted = 0"
+
+    static let urisForLocalBookmarks =
+        "SELECT bmkUri" +
+        "FROM \(ViewBookmarksLocalOnMirror) " +
+        "WHERE \(ViewBookmarksLocalOnMirror).server_modified > ? OR " +
+            "\(ViewBookmarksLocalOnMirror).local_modified > ?"
+
     static let bookmarkHighlights =
         "SELECT historyID, url, siteTitle, guid, is_bookmarked FROM (" +
             "   SELECT \(TableHistory).id AS historyID, \(TableHistory).url AS url, \(TableHistory).title AS siteTitle, guid, \(TableHistory).domain_id, NULL AS visitDate, 1 AS is_bookmarked" +
             "   FROM (" +
-            "       SELECT bmkUri" +
-            "       FROM \(ViewBookmarksLocalOnMirror)" +
-            "       WHERE \(ViewBookmarksLocalOnMirror).server_modified > ? OR \(ViewBookmarksLocalOnMirror).local_modified > ?" +
+                    (AppConstants.MOZ_SIMPLE_BOOKMARKS_SYNCING ? urisForSimpleSyncedBookmarks : urisForLocalBookmarks) +
             "   )" +
             "   LEFT JOIN \(TableHistory) ON \(TableHistory).url = bmkUri" + removeMultipleDomainsSubquery +
             "   WHERE \(TableHistory).title NOT NULL and \(TableHistory).title != '' AND url NOT IN" +

@@ -51,7 +51,18 @@ public struct UIConstants {
     static let PrivateModeAssistantToolbarBackgroundColor = UIColor(red: 89 / 255, green: 89 / 255, blue: 89 / 255, alpha: 1)
     static let PrivateModeToolbarTintColor = UIColor(red: 74 / 255, green: 74 / 255, blue: 74 / 255, alpha: 1)
 
-    static let ToolbarHeight: CGFloat = 46
+    static var ToolbarHeight: CGFloat = 46
+    static var BottomToolbarHeight: CGFloat {
+        get {
+            var bottomInset: CGFloat = 0.0
+            if #available(iOS 11, *) {
+                if let window = UIApplication.shared.keyWindow {
+                    bottomInset = window.safeAreaInsets.bottom
+                }
+            }
+            return ToolbarHeight + bottomInset
+        }
+    }
     static let DefaultRowHeight: CGFloat = 58
     static let DefaultPadding: CGFloat = 10
     static let SnackbarButtonHeight: CGFloat = 48
@@ -71,7 +82,7 @@ public struct UIConstants {
 
     static let PanelBackgroundColor = UIColor.white
     static let SeparatorColor = UIColor(rgb: 0xcccccc)
-    static let HighlightBlue = UIColor(red:76/255, green:158/255, blue:255/255, alpha:1)
+    static let HighlightBlue = UIColor(red: 76/255, green: 158/255, blue: 255/255, alpha: 1)
     static let DestructiveRed = UIColor(red: 255/255, green: 64/255, blue: 0/255, alpha: 1.0)
     static let BorderColor = UIColor.darkGray
     static let BackgroundColor = AppBackgroundColor

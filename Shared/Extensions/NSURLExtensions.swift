@@ -22,7 +22,7 @@ private struct ETLDEntry: CustomStringConvertible {
     }
 }
 
-private typealias TLDEntryMap = [String:ETLDEntry]
+private typealias TLDEntryMap = [String: ETLDEntry]
 
 private func loadEntriesFromDisk() -> TLDEntryMap? {
     if let data = String.contentsOfFileWithResourceName("effective_tld_names", ofType: "dat", fromBundle: Bundle(identifier: "org.mozilla.Shared")!, encoding: String.Encoding.utf8, error: nil) {
@@ -180,6 +180,12 @@ extension URL {
         } else {
             return urlString
         }
+    }
+
+    /// String suitable for displaying outside of the app, for example in notifications, were Data Detectors will
+    /// linkify the text and make it into a openable-in-Safari link.
+    public var absoluteDisplayExternalString: String {
+        return self.absoluteDisplayString.replacingOccurrences(of: ".", with: "\u{2024}")
     }
 
     public var displayURL: URL? {

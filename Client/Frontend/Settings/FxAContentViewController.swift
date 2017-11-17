@@ -53,10 +53,6 @@ class FxAContentViewController: SettingsContentViewController, WKScriptMessageHa
         fatalError("init(coder:) has not been implemented")
     }
 
-    deinit {
-        NotificationCenter.default.removeObserver(self, name: NotificationFirefoxAccountVerified, object: nil)        
-    }
-
     override func viewDidLoad() {
         super.viewDidLoad()
     }
@@ -66,6 +62,13 @@ class FxAContentViewController: SettingsContentViewController, WKScriptMessageHa
         
         if AppConstants.MOZ_SHOW_FXA_AVATAR {
             profile.getAccount()?.updateProfile()
+        }
+        
+        // If the FxAContentViewController was launched from a FxA deferred link
+        // onboarding might not have been shown. Check to see if it needs to be
+        // displayed and don't animate.
+        if let appDelegate = UIApplication.shared.delegate as? AppDelegate {
+            appDelegate.browserViewController.presentIntroViewController(false, animated: false)
         }
     }
 
@@ -81,7 +84,7 @@ class FxAContentViewController: SettingsContentViewController, WKScriptMessageHa
         // Handle messages from the content server (via our user script).
         let contentController = WKUserContentController()
         contentController.addUserScript(userScript)
-        contentController.add(LeakAvoider(delegate:self), name: "accountsCommandHandler")
+        contentController.add(LeakAvoider(delegate: self), name: "accountsCommandHandler")
 
         let config = WKWebViewConfiguration()
         config.userContentController = contentController
@@ -104,7 +107,7 @@ class FxAContentViewController: SettingsContentViewController, WKScriptMessageHa
         let data = [
             "type": type,
             "content": content,
-        ] as [String : Any]
+        ] as [String: Any]
         let json = JSON(data).stringValue() ?? ""
         let script = "window.postMessage(\(json), '\(self.url.absoluteString)');"
         webView.evaluateJavaScript(script, completionHandler: nil)

@@ -18,14 +18,14 @@ class TrackingProtectionTests: KIFTestCase {
     }
     
     override func tearDown() {
+        BrowserUtils.resetToAboutHome(tester())
         BrowserUtils.clearPrivateData(tester: tester())
         super.tearDown()
     }
 
     private func checkTrackingProtection(isBlocking: Bool) {
-        let url = "\(webRoot)/tracking-protection-test.html"
+        let url = "\(webRoot!)/tracking-protection-test.html"
         TrackingProtectionTests.checkIfImageLoaded(url: url, shouldBlockImage: isBlocking)
-        BrowserUtils.resetToAboutHome(tester())
     }
 
     public static func checkIfImageLoaded(url: String, shouldBlockImage: Bool) {
@@ -66,13 +66,6 @@ class TrackingProtectionTests: KIFTestCase {
             let success = errorOrNil == nil
             return success
         }
-        
-        if BrowserUtils.iPad() {
-            EarlGrey.select(elementWithMatcher: grey_accessibilityID("TopTabsViewController.tabsButton"))
-                .perform(grey_tap())
-        } else {
-            EarlGrey.select(elementWithMatcher: grey_accessibilityID("URLBarView.tabsButton")).perform(grey_tap())
-        }
         EarlGrey.select(elementWithMatcher: grey_accessibilityLabel("Menu")).perform(grey_tap())
         EarlGrey.select(elementWithMatcher: grey_text("Settings")).perform(grey_tap())
         let success = menuAppeared?.wait(withTimeout: 20)
@@ -90,13 +83,24 @@ class TrackingProtectionTests: KIFTestCase {
         // Exit to main view
         tester().tapView(withAccessibilityLabel: "Settings")
         tester().tapView(withAccessibilityLabel: "Done")
-        tester().tapView(withAccessibilityLabel: "home")
     }
     
     func testNormalTrackingProtection() {
         
-        // Initially, Tracking Protection is enabled on Private tabs only. open site with a tracker on a regular tab.
-        // Image should be open since the tracking protection is turned off
+        openTPSetting()
+        EarlGrey.select(elementWithMatcher: grey_accessibilityLabel("Private Browsing Mode Only")).perform(grey_tap())
+        closeTPSetting()
+
+        if BrowserUtils.iPad() {
+        EarlGrey.select(elementWithMatcher:grey_accessibilityID("TopTabsViewController.tabsButton"))
+                .perform(grey_tap())
+        } else {
+            EarlGrey.select(elementWithMatcher:grey_accessibilityID("TabToolbar.tabsButton"))
+                .perform(grey_tap())
+        }
+        EarlGrey.select(elementWithMatcher:grey_accessibilityID("TabTrayController.addTabButton"))
+            .perform(grey_tap())
+
         checkTrackingProtection(isBlocking: false)
 
         openTPSetting()
@@ -105,17 +109,23 @@ class TrackingProtectionTests: KIFTestCase {
 
         // Now with the TP enabled, the image should be blocked
         checkTrackingProtection(isBlocking: true)
-
-
         openTPSetting()
         EarlGrey.select(elementWithMatcher: grey_accessibilityLabel("Private Browsing Mode Only")).perform(grey_tap())
         closeTPSetting()
     }
     
     func testPrivateTabPageTrackingProtection() {
-        EarlGrey.select(elementWithMatcher:grey_accessibilityLabel("Menu")).perform(grey_tap())
-        EarlGrey.select(elementWithMatcher:grey_accessibilityLabel("New Private Tab"))
-            .inRoot(grey_kindOfClass(NSClassFromString("Client.MenuItemCollectionViewCell")!))
+        if BrowserUtils.iPad() {
+            EarlGrey.select(elementWithMatcher:
+                grey_accessibilityID("TopTabsViewController.tabsButton"))
+                .perform(grey_tap())
+        } else {
+            EarlGrey.select(elementWithMatcher:grey_accessibilityID("TabToolbar.tabsButton"))
+                .perform(grey_tap())
+        }
+        EarlGrey.select(elementWithMatcher:grey_accessibilityID("TabTrayController.maskButton"))
+            .perform(grey_tap())
+        EarlGrey.select(elementWithMatcher:grey_accessibilityID("TabTrayController.addTabButton"))
             .perform(grey_tap())
 
         checkTrackingProtection(isBlocking: true)

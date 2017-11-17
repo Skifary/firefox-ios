@@ -22,6 +22,10 @@ private func presentNavAsFormSheet(_ presented: UINavigationController, presente
 class TurnPasscodeOnSetting: Setting {
     weak var settings: AuthenticationSettingsViewController?
 
+    override var accessibilityIdentifier: String? {
+        return "TurnOnPasscode"
+    }
+
     init(settings: SettingsTableViewController, delegate: SettingsDelegate? = nil) {
         self.settings = settings as? AuthenticationSettingsViewController
         super.init(title: NSAttributedString.tableRowTitle(AuthenticationStrings.turnOnPasscode, enabled: true),
@@ -38,6 +42,10 @@ class TurnPasscodeOnSetting: Setting {
 class TurnPasscodeOffSetting: Setting {
     weak var settings: AuthenticationSettingsViewController?
 
+    override var accessibilityIdentifier: String? {
+        return "TurnOffPasscode"
+    }
+
     init(settings: SettingsTableViewController, delegate: SettingsDelegate? = nil) {
         self.settings = settings as? AuthenticationSettingsViewController
         super.init(title: NSAttributedString.tableRowTitle(AuthenticationStrings.turnOffPasscode, enabled: true),
@@ -53,6 +61,10 @@ class TurnPasscodeOffSetting: Setting {
 
 class ChangePasscodeSetting: Setting {
     weak var settings: AuthenticationSettingsViewController?
+
+    override var accessibilityIdentifier: String? {
+        return "ChangePasscode"
+    }
 
     init(settings: SettingsTableViewController, delegate: SettingsDelegate? = nil, enabled: Bool) {
         self.settings = settings as? AuthenticationSettingsViewController
@@ -75,6 +87,10 @@ class RequirePasscodeSetting: Setting {
     weak var settings: AuthenticationSettingsViewController?
 
     fileprivate weak var navigationController: UINavigationController?
+
+    override var accessibilityIdentifier: String? {
+        return "PasscodeInterval"
+    }
 
     override var accessoryType: UITableViewCellAccessoryType { return .disclosureIndicator }
 
@@ -241,8 +257,15 @@ class AuthenticationSettingsViewController: SettingsTableViewController {
     }
 
     fileprivate func updateTitleForTouchIDState() {
-        if LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) {
-            navigationItem.title = AuthenticationStrings.touchIDPasscodeSetting
+        let localAuthContext = LAContext()
+        if localAuthContext.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) {
+            let title: String
+            if #available(iOS 11.0, *), localAuthContext.biometryType == .typeFaceID {
+                title = AuthenticationStrings.faceIDPasscodeSetting
+            } else {
+                title = AuthenticationStrings.touchIDPasscodeSetting
+            }
+            navigationItem.title = title
         } else {
             navigationItem.title = AuthenticationStrings.passcode
         }
@@ -260,11 +283,15 @@ class AuthenticationSettingsViewController: SettingsTableViewController {
         var requirePasscodeSectionChildren: [Setting] = [RequirePasscodeSetting(settings: self)]
         let localAuthContext = LAContext()
         if localAuthContext.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) {
+            let title: String
+            if #available(iOS 11.0, *), localAuthContext.biometryType == .typeFaceID {
+                title = Strings.UseFaceID
+            } else {
+                title = Strings.UseTouchID
+            }
             requirePasscodeSectionChildren.append(
                 TouchIDSetting(
-                    title: NSAttributedString.tableRowTitle(
-                        NSLocalizedString("Use Touch ID", tableName:  "AuthenticationManager", comment: "List section title for when to use Touch ID"), enabled: true
-                    ),
+                    title: NSAttributedString.tableRowTitle(title, enabled: true),
                     navigationController: self.navigationController,
                     delegate: nil,
                     enabled: true,

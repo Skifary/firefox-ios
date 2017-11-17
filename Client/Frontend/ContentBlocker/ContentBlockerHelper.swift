@@ -6,7 +6,7 @@ import WebKit
 import Shared
 import Deferred
 
-fileprivate let NotificationContentBlockerReloadNeeded = "NotificationContentBlockerReloadNeeded"
+fileprivate let NotificationContentBlockerUpdateNeeded = "NotificationContentBlockerUpdateNeeded"
 
 @available(iOS 11.0, *)
 class ContentBlockerHelper {
@@ -18,7 +18,25 @@ class ContentBlockerHelper {
     fileprivate weak var tab: Tab?
     fileprivate weak var profile: Profile?
 
-    static var blockImagesRule: WKContentRuleList? = nil
+    static var blockImagesRule: WKContentRuleList?
+
+    enum TrackingProtectionUserOverride {
+        case disallowUserOverride // Option is not offered if tracking protection is off in prefs
+        case allowedButNotSet
+        case forceEnabled
+        case forceDisabled
+    }
+
+    fileprivate var prefOverrideTrackingProtectionEnabled: Bool?
+    var userOverrideForTrackingProtection: TrackingProtectionUserOverride {
+        if !trackingProtectionEnabledInSettings {
+            return .disallowUserOverride
+        }
+        guard let enabled = prefOverrideTrackingProtectionEnabled else {
+            return .allowedButNotSet
+        }
+        return enabled ? .forceEnabled : .forceDisabled
+    }
 
     // Raw values are stored to prefs, be careful changing them.
     enum EnabledState: String {
@@ -67,7 +85,7 @@ class ContentBlockerHelper {
     }
 
     static func prefsChanged() {
-        NotificationCenter.default.post(name: Notification.Name(rawValue: NotificationContentBlockerReloadNeeded), object: nil)
+        NotificationCenter.default.post(name: Notification.Name(rawValue: NotificationContentBlockerUpdateNeeded), object: nil)
     }
 
     class func name() -> String {
@@ -92,7 +110,7 @@ class ContentBlockerHelper {
             }
         }
 
-        let blockImages = "[{'trigger':{'url-filter':'.*','resource-type':['image']},'action':{'type':'block'}}]".replacingOccurrences(of: "'", with:"\"")
+        let blockImages = "[{'trigger':{'url-filter':'.*','resource-type':['image']},'action':{'type':'block'}}]".replacingOccurrences(of: "'", with: "\"")
         ruleStore.compileContentRuleList(forIdentifier: "images", encodedContentRuleList: blockImages) {
             rule, error in
             assert(rule != nil && error == nil)
@@ -101,7 +119,7 @@ class ContentBlockerHelper {
     }
 
     func setupForWebView() {
-        NotificationCenter.default.addObserver(self, selector: #selector(ContentBlockerHelper.reloadTab), name: NSNotification.Name(rawValue: NotificationContentBlockerReloadNeeded), object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(ContentBlockerHelper.updateTab), name: NSNotification.Name(rawValue: NotificationContentBlockerUpdateNeeded), object: nil)
         addActiveRulesToTab()
     }
 
@@ -109,8 +127,14 @@ class ContentBlockerHelper {
         NotificationCenter.default.removeObserver(self)
     }
 
-    @objc func reloadTab() {
+    @objc func updateTab() {
         addActiveRulesToTab()
+    }
+
+    func overridePrefsAndReloadTab(enableTrackingProtection: Bool) {
+        prefOverrideTrackingProtectionEnabled = enableTrackingProtection
+        updateTab()
+        tab?.reload()
     }
 
     fileprivate var blockingStrengthPref: BlockingStrength {
@@ -123,27 +147,32 @@ class ContentBlockerHelper {
         return EnabledState(rawValue: pref) ?? .onInPrivateBrowsing
     }
 
-    fileprivate func addActiveRulesToTab() {
-        guard let tab = tab else { return }
-        removeTrackingProtectionFromTab()
-
+    fileprivate var trackingProtectionEnabledInSettings: Bool {
         switch enabledStatePref {
         case .off:
-            return
+            return false
         case .on:
-            break
+            return true
         case .onInPrivateBrowsing:
-            if !tab.isPrivate {
-                return
-            }
+            return tab?.isPrivate ?? false
         }
+    }
 
+    fileprivate func addActiveRulesToTab() {
+        removeTrackingProtectionFromTab()
+
+        if userOverrideForTrackingProtection == .forceDisabled {
+            // User can temporarily override the settings to turn TP on or off.
+            return
+        } else if !trackingProtectionEnabledInSettings {
+            return
+        }
         let rules = blocklistBasic + (blockingStrengthPref == .strict ? blocklistStrict : [])
         for name in rules {
             ruleStore.lookUpContentRuleList(forIdentifier: name) { rule, error in
                 guard let rule = rule else {
-                    print("Content blocker load error: " + (error?.localizedDescription ?? "empty rules"))
-                    assert(false)
+                    let msg = "lookUpContentRuleList for \(name):  \(error?.localizedDescription ?? "empty rules")"
+                    Sentry.shared.send(message: "Content blocker error", tag: .general, description: msg)
                     return
                 }
                 self.addToTab(contentRuleList: rule)
@@ -165,11 +194,17 @@ class ContentBlockerHelper {
     }
 
     func noImageMode(enabled: Bool) {
-        guard let rule = ContentBlockerHelper.blockImagesRule  else { return }
+        guard let rule = ContentBlockerHelper.blockImagesRule else { return }
+
         if enabled {
             addToTab(contentRuleList: rule)
         } else {
             tab?.webView?.configuration.userContentController.remove(rule)
+        }
+
+        // Async required here to ensure remove() call is processed.
+        DispatchQueue.main.async() {
+            self.tab?.webView?.evaluateJavaScript("window.__firefox__.NoImageMode.setEnabled(\(enabled))", completionHandler: nil)
         }
     }
 }

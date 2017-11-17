@@ -297,9 +297,6 @@ class TabTrayController: UIViewController {
     }
 
     deinit {
-        NotificationCenter.default.removeObserver(self, name: NSNotification.Name.UIApplicationWillResignActive, object: nil)
-        NotificationCenter.default.removeObserver(self, name: NSNotification.Name.UIApplicationWillEnterForeground, object: nil)
-        NotificationCenter.default.removeObserver(self, name: NotificationDynamicFontChanged, object: nil)
         self.tabManager.removeDelegate(self)
     }
 
@@ -319,7 +316,7 @@ class TabTrayController: UIViewController {
 
         collectionView.dataSource = tabDataSource
         collectionView.delegate = tabLayoutDelegate
-        collectionView.contentInset = UIEdgeInsets(top: 0, left: 0, bottom: UIConstants.ToolbarHeight, right: 0)
+        collectionView.contentInset = UIEdgeInsets(top: 0, left: 0, bottom: UIConstants.BottomToolbarHeight, right: 0)
         collectionView.register(TabCell.self, forCellWithReuseIdentifier: TabCell.Identifier)
         collectionView.backgroundColor = TabTrayControllerUX.BackgroundColor
 
@@ -393,7 +390,7 @@ class TabTrayController: UIViewController {
 
         toolbar.snp.makeConstraints { make in
             make.left.right.bottom.equalTo(view)
-            make.height.equalTo(UIConstants.ToolbarHeight)
+            make.height.equalTo(UIConstants.BottomToolbarHeight)
         }
     }
 
@@ -686,7 +683,7 @@ extension TabTrayController: PhotonActionSheetProtocol {
     func didTapDelete(_ sender: UIButton) {
         let controller = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
         controller.addAction(UIAlertAction(title: Strings.AppMenuCloseAllTabsTitleString, style: .default, handler: { _ in self.closeTabsForCurrentTray() }))
-        controller.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment:"Label for Cancel button"), style: .cancel, handler: nil))
+        controller.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment: "Label for Cancel button"), style: .cancel, handler: nil))
         controller.popoverPresentationController?.sourceView = sender
         controller.popoverPresentationController?.sourceRect = sender.bounds
         present(controller, animated: true, completion: nil)
@@ -752,7 +749,7 @@ fileprivate class TabManagerDataSource: NSObject, UICollectionViewDataSource {
         if let favIcon = tab.displayFavicon {
             tabCell.favicon.sd_setImage(with: URL(string: favIcon.url)!)
         } else {
-            var defaultFavicon = UIImage(named: "defaultFavicon")
+            let defaultFavicon = UIImage(named: "defaultFavicon")
             if tab.isPrivate {
                 tabCell.favicon.image = defaultFavicon
                 tabCell.favicon.tintColor = UIColor.white
@@ -968,10 +965,8 @@ extension TabTrayController: UIViewControllerPreviewingDelegate {
     func previewingContext(_ previewingContext: UIViewControllerPreviewing, commit viewControllerToCommit: UIViewController) {
         guard let tpvc = viewControllerToCommit as? TabPeekViewController else { return }
         tabManager.selectTab(tpvc.tab)
-        _ = self.navigationController?.popViewController(animated: true)
-
+        navigationController?.popViewController(animated: true)
         delegate?.tabTrayDidDismiss(self)
-
     }
 }
 
@@ -1032,19 +1027,20 @@ class TrayToolbar: UIView {
         maskButton.accessibilityIdentifier = "TabTrayController.maskButton"
 
         buttonToCenter?.snp.makeConstraints { make in
-            make.center.equalTo(self)
+            make.centerX.equalTo(self)
+            make.top.equalTo(self)
             make.size.equalTo(toolbarButtonSize)
         }
 
         addTabButton.snp.makeConstraints { make in
-            make.centerY.equalTo(self)
+            make.top.equalTo(self)
             make.right.equalTo(self).offset(-sideOffset)
             make.size.equalTo(toolbarButtonSize)
         }
 
         addSubview(maskButton)
         maskButton.snp.makeConstraints { make in
-            make.centerY.equalTo(self)
+            make.top.equalTo(self)
             make.left.equalTo(self).offset(sideOffset)
             make.size.equalTo(toolbarButtonSize)
         }

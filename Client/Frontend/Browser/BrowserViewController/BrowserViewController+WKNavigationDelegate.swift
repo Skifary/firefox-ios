@@ -89,7 +89,7 @@ extension BrowserViewController: WKNavigationDelegate {
         // First special case are some schemes that are about Calling. We prompt the user to confirm this action. This
         // gives us the exact same behaviour as Safari.
         if url.scheme == "tel" || url.scheme == "facetime" || url.scheme == "facetime-audio" {
-            UIApplication.shared.openURL(url)
+            UIApplication.shared.open(url, options: [:])
             decisionHandler(WKNavigationActionPolicy.cancel)
             return
         }
@@ -99,7 +99,7 @@ extension BrowserViewController: WKNavigationDelegate {
         // iOS will always say yes. TODO Is this the same as isWhitelisted?
 
         if isAppleMapsURL(url) {
-            UIApplication.shared.openURL(url)
+            UIApplication.shared.open(url, options: [:])
             decisionHandler(WKNavigationActionPolicy.cancel)
             return
         }
@@ -120,7 +120,7 @@ extension BrowserViewController: WKNavigationDelegate {
             if let mailToMetadata = url.mailToMetadata(), let mailScheme = self.profile.prefs.stringForKey(PrefsKeys.KeyMailToOption), mailScheme != "mailto" {
                 self.mailtoLinkHandler.launchMailClientForScheme(mailScheme, metadata: mailToMetadata, defaultMailtoURL: url)
             } else {
-                UIApplication.shared.openURL(url)
+                UIApplication.shared.open(url, options: [:])
             }
 
             LeanplumIntegration.sharedInstance.track(eventName: .openedMailtoLink)
@@ -141,15 +141,15 @@ extension BrowserViewController: WKNavigationDelegate {
             return
         }
 
-        // Default to calling openURL(). What this does depends on the iOS version. On iOS 8, it will just work without
-        // prompting. On iOS9, depending on the scheme, iOS will prompt: "Firefox" wants to open "Twitter". It will ask
-        // every time. There is no way around this prompt. (TODO Confirm this is true by adding them to the Info.plist)
-
-        let openedURL = UIApplication.shared.openURL(url)
-        if !openedURL {
-            let alert = UIAlertController(title: Strings.UnableToOpenURLErrorTitle, message: Strings.UnableToOpenURLError, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: UIConstants.OKString, style: UIAlertActionStyle.default, handler: nil))
-            self.present(alert, animated: true, completion: nil)
+        // Ignore JS navigated links, the intention is to match Safari and native WKWebView behaviour.
+        if navigationAction.navigationType == .linkActivated {
+            UIApplication.shared.open(url, options: [:]) { openedURL in
+                if !openedURL {
+                    let alert = UIAlertController(title: Strings.UnableToOpenURLErrorTitle, message: Strings.UnableToOpenURLError, preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: UIConstants.OKString, style: UIAlertActionStyle.default, handler: nil))
+                    self.present(alert, animated: true, completion: nil)
+                }
+            }
         }
         decisionHandler(WKNavigationActionPolicy.cancel)
     }
@@ -205,7 +205,8 @@ extension BrowserViewController: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        let tab: Tab! = tabManager[webView]
-        navigateInTab(tab: tab, to: navigation)
+        if let tab = tabManager[webView] {
+            navigateInTab(tab: tab, to: navigation)
+        }
     }
 }

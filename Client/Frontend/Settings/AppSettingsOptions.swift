@@ -103,10 +103,6 @@ class SyncNowSetting: WithAccountSetting {
         NotificationCenter.default.addObserver(self, selector: #selector(SyncNowSetting.stopRotateSyncIcon), name: NotificationProfileDidFinishSyncing, object: nil)
     }
     
-    deinit {
-        NotificationCenter.default.removeObserver(self, name: NotificationProfileDidFinishSyncing, object: nil)
-    }
-    
     fileprivate lazy var timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -330,10 +326,6 @@ class AccountStatusSetting: WithAccountSetting {
     override init(settings: SettingsTableViewController) {
         super.init(settings: settings)
         NotificationCenter.default.addObserver(self, selector: #selector(AccountStatusSetting.updateAccount(notification:)), name: NotificationFirefoxAccountProfileChanged, object: nil)
-    }
-    
-    deinit {
-        NotificationCenter.default.removeObserver(self, name: NotificationFirefoxAccountProfileChanged, object: nil)
     }
     
     func updateAccount(notification: Notification) {
@@ -611,7 +603,7 @@ class ForceCrashSetting: HiddenSetting {
     }
 
     override func onClick(_ navigationController: UINavigationController?) {
-        SentryIntegration.shared.crash()
+        Sentry.shared.crash()
     }
 }
 
@@ -715,14 +707,22 @@ class SendAnonymousUsageDataSetting: BoolSetting {
     init(prefs: Prefs, delegate: SettingsDelegate?) {
         super.init(
             prefs: prefs, prefKey: AppConstants.PrefSendUsageData, defaultValue: true,
-            attributedTitleText: NSAttributedString(string: NSLocalizedString("Send Anonymous Usage Data", tableName: "SendAnonymousUsageData", comment: "See http://bit.ly/1SmEXU1")),
-            attributedStatusText: NSAttributedString(string: NSLocalizedString("More Info…", tableName: "SendAnonymousUsageData", comment: "See http://bit.ly/1SmEXU1"), attributes: [NSForegroundColorAttributeName: UIConstants.HighlightBlue]),
+            attributedTitleText: NSAttributedString(string: Strings.SendUsageSettingTitle),
+            attributedStatusText: createStatusText(),
             settingDidChange: {
                 AdjustIntegration.setEnabled($0)
                 LeanplumIntegration.sharedInstance.setUserAttributes(attributes: [UserAttributeKeyName.telemetryOptIn.rawValue: $0])
                 LeanplumIntegration.sharedInstance.setEnabled($0)
             }
         )
+    }
+
+    private func createStatusText() -> NSAttributedString {
+        let statusText = NSMutableAttributedString()
+        statusText.append(NSAttributedString(string: Strings.SendUsageSettingMessage, attributes: [NSForegroundColorAttributeName: UIConstants.TableViewHeaderTextColor]))
+        statusText.append(NSAttributedString(string: " "))
+        statusText.append(NSAttributedString(string: Strings.SendUsageSettingLink, attributes: [NSForegroundColorAttributeName: UIConstants.HighlightBlue]))
+        return statusText
     }
 
     override var url: URL? {
@@ -770,6 +770,28 @@ class SearchSetting: Setting {
     override func onClick(_ navigationController: UINavigationController?) {
         let viewController = SearchSettingsTableViewController()
         viewController.model = profile.searchEngines
+        viewController.profile = profile
+        navigationController?.pushViewController(viewController, animated: true)
+    }
+}
+
+class SyncSetting: Setting {
+    let profile: Profile
+
+    override var accessoryType: UITableViewCellAccessoryType { return .disclosureIndicator }
+
+    override var accessibilityIdentifier: String? { return "Sync" }
+
+    override var hidden: Bool { return !(profile.hasAccount() && profile.hasSyncableAccount() && profile.syncManager.lastSyncFinishTime != nil) }
+
+    init(settings: SettingsTableViewController) {
+        self.profile = settings.profile
+
+        super.init(title: NSAttributedString(string: Strings.SettingsSyncSectionName, attributes: [NSForegroundColorAttributeName: UIConstants.TableViewRowTextColor]))
+    }
+
+    override func onClick(_ navigationController: UINavigationController?) {
+        let viewController = SyncContentSettingsViewController()
         viewController.profile = profile
         navigationController?.pushViewController(viewController, animated: true)
     }
@@ -841,10 +863,15 @@ class TouchIDPasscodeSetting: Setting {
     init(settings: SettingsTableViewController, delegate: SettingsDelegate? = nil) {
         self.profile = settings.profile
         self.tabManager = settings.tabManager
+        let localAuthContext = LAContext()
 
         let title: String
-        if LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) {
-            title = AuthenticationStrings.touchIDPasscodeSetting
+        if localAuthContext.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) {
+            if #available(iOS 11.0, *), localAuthContext.biometryType == .typeFaceID {
+                title = AuthenticationStrings.faceIDPasscodeSetting
+            } else {
+                title = AuthenticationStrings.touchIDPasscodeSetting
+            }
         } else {
             title = AuthenticationStrings.passcode
         }

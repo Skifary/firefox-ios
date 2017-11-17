@@ -85,7 +85,7 @@ class ButtonToast: UIView {
         button.titleLabel?.adjustsFontSizeToFitWidth = true
         button.titleLabel?.minimumScaleFactor = 0.1
 
-        let recognizer = UITapGestureRecognizer(target: self, action:#selector(ButtonToast.buttonPressed(_:)))
+        let recognizer = UITapGestureRecognizer(target: self, action: #selector(ButtonToast.buttonPressed(_:)))
         button.addGestureRecognizer(recognizer)
         toast.addSubview(button)
         var descriptionLabel: UILabel?
@@ -106,7 +106,7 @@ class ButtonToast: UIView {
             label.adjustsFontSizeToFitWidth = true
             label.snp.makeConstraints { (make) in
                 make.leading.equalTo(toast).offset(ButtonToastUX.ToastPadding)
-                make.top.equalTo(toast).offset(ButtonToastUX.ToastButtonPadding)
+                make.top.equalTo(toast).offset(ButtonToastUX.TitleButtonPadding)
                 make.trailing.equalTo(button.snp.leading).offset(-ButtonToastUX.TitleButtonPadding)
             }
             description.snp.makeConstraints { (make) in

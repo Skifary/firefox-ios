@@ -4,9 +4,11 @@
 
 import Foundation
 import Shared
+import EarlGrey
 
 class DomainAutocompleteTests: KIFTestCase {
     override func setUp() {
+
         super.setUp()
         BrowserUtils.dismissFirstRunUI(tester())
     }
@@ -31,11 +33,7 @@ class DomainAutocompleteTests: KIFTestCase {
 
     override func tearDown() {
         super.tearDown()
-        do {
-            try tester().tryFindingTappableView(withAccessibilityLabel: "Cancel")
-            tester().tapView(withAccessibilityLabel: "Cancel")
-        } catch _ {
-        }
+        EarlGrey.select(elementWithMatcher: grey_accessibilityID("goBack")).perform(grey_tap())
         BrowserUtils.resetToAboutHome(tester())
         BrowserUtils.clearPrivateData(tester: tester())
     }

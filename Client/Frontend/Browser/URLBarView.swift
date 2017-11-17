@@ -75,6 +75,7 @@ protocol URLBarDelegate: class {
     func urlBar(_ urlBar: URLBarView, didSubmitText text: String)
     // Returns either (search query, true) or (url, false).
     func urlBarDisplayTextForURL(_ url: URL?) -> (String?, Bool)
+    func urlBarDidLongPressPageOptions(_ urlBar: URLBarView, from button: UIButton)
 }
 
 class URLBarView: UIView {
@@ -155,14 +156,16 @@ class URLBarView: UIView {
     fileprivate lazy var cancelButton: UIButton = {
         let cancelButton = InsetButton()
         cancelButton.setImage(UIImage.templateImageNamed("goBack"), for: .normal)
+        cancelButton.accessibilityIdentifier = "urlBar-cancel"
         cancelButton.addTarget(self, action: #selector(URLBarView.SELdidClickCancel), for: .touchUpInside)
         cancelButton.alpha = 0
         return cancelButton
     }()
     
-    var showQRScannerButton: UIButton = {
-        let button = UIButton()
+    fileprivate lazy var showQRScannerButton: InsetButton = {
+        let button = InsetButton()
         button.setImage(UIImage.templateImageNamed("menu-ScanQRCode"), for: .normal)
+        button.accessibilityIdentifier = "urlBar-scanQRCode"
         button.clipsToBounds = false
         button.addTarget(self, action: #selector(URLBarView.showQRScanner), for: .touchUpInside)
         button.setContentHuggingPriority(1000, for: UILayoutConstraintAxis.horizontal)
@@ -283,7 +286,8 @@ class URLBarView: UIView {
         
         showQRScannerButton.snp.makeConstraints { make in
             make.centerY.equalTo(self.locationContainer)
-            make.trailing.equalTo(self).offset(-URLBarViewUX.Padding)
+            make.trailing.equalTo(self)
+            make.size.equalTo(URLBarViewUX.ButtonHeight)
         }
     }
 
@@ -295,9 +299,7 @@ class URLBarView: UIView {
             self.locationContainer.snp.remakeConstraints { make in
                 let height = URLBarViewUX.LocationHeight + (URLBarViewUX.TextFieldBorderWidthSelected * 2)
                 make.height.equalTo(height)
-                // the offset is equal to the padding but minus the borderwidth
-                let padding = URLBarViewUX.Padding - URLBarViewUX.TextFieldBorderWidthSelected
-                make.trailing.equalTo(self.showQRScannerButton.snp.leading).offset(-padding)
+                make.trailing.equalTo(self.showQRScannerButton.snp.leading)
                 make.leading.equalTo(self.cancelButton.snp.trailing)
                 make.centerY.equalTo(self)
             }
@@ -615,6 +617,10 @@ extension URLBarView: TabLocationViewDelegate {
     func tabLocationViewDidTapPageOptions(_ tabLocationView: TabLocationView, from button: UIButton) {
         delegate?.urlBarDidPressPageOptions(self, from: tabLocationView.pageOptionsButton)
     }
+    
+    func tabLocationViewDidLongPressPageOptions(_ tabLocationView: TabLocationView) {
+        delegate?.urlBarDidLongPressPageOptions(self, from: tabLocationView.pageOptionsButton)
+    }
 
     func tabLocationViewLocationAccessibilityActions(_ tabLocationView: TabLocationView) -> [UIAccessibilityCustomAction]? {
         return delegate?.urlBarLocationAccessibilityActions(self)
@@ -673,7 +679,7 @@ extension URLBarView: Themeable {
         
         let isPrivate = themeName == Theme.PrivateMode
         
-        progressBar.setGradientColors(startColor: UIConstants.LoadingStartColor.color(isPBM: isPrivate), endColor:UIConstants.LoadingEndColor.color(isPBM: isPrivate))
+        progressBar.setGradientColors(startColor: UIConstants.LoadingStartColor.color(isPBM: isPrivate), endColor: UIConstants.LoadingEndColor.color(isPBM: isPrivate))
         currentTheme = themeName
         locationBorderColor = theme.borderColor!
         locationActiveBorderColor = theme.activeBorderColor!

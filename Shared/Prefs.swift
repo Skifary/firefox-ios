@@ -22,6 +22,7 @@ public struct PrefsKeys {
     public static let ASPocketStoriesVisible = "ASPocketStoriesVisible"
     public static let ASRecentHighlightsVisible = "ASRecentHighlightsVisible"
     public static let ASBookmarkHighlightsVisible = "ASBookmarkHighlightsVisible"
+    public static let ASLastInvalidation = "ASLastInvalidation"
 
     public static let KeyUseCustomSyncService = "useCustomSyncService"
     public static let KeyCustomSyncToken = "customSyncTokenServer"
@@ -56,7 +57,7 @@ public protocol Prefs {
     func unsignedLongForKey(_ defaultName: String) -> UInt64?
     func stringArrayForKey(_ defaultName: String) -> [String]?
     func arrayForKey(_ defaultName: String) -> [Any]?
-    func dictionaryForKey(_ defaultName: String) -> [String : Any]?
+    func dictionaryForKey(_ defaultName: String) -> [String: Any]?
     func removeObjectForKey(_ defaultName: String)
     func clearAll()
 }
@@ -176,7 +177,7 @@ open class MockProfilePrefs: Prefs {
         return nil
     }
 
-    open func dictionaryForKey(_ defaultName: String) -> [String : Any]? {
+    open func dictionaryForKey(_ defaultName: String) -> [String: Any]? {
         return things.object(forKey: name(defaultName)) as? [String: Any]
     }
 

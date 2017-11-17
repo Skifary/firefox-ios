@@ -36,6 +36,9 @@ open class FirefoxAccount {
     
     open var deviceRegistration: FxADeviceRegistration?
 
+    // Only set one time in the Choose What to Sync FxA screen shown during registration.
+    open var declinedEngines: [String]?
+
     open var configuration: FirefoxAccountConfiguration
 
     open var pushRegistration: PushRegistration?
@@ -48,21 +51,22 @@ open class FirefoxAccount {
     // deferred safely.)  If no advance() is in progress, a new shared deferred will be scheduled and returned.  To
     // prevent data races against the shared deferred, advance() locks accesses to `advanceDeferred` using
     // `advanceLock`.
-    fileprivate var advanceLock = OSSpinLock()
+    fileprivate var advanceLock = os_unfair_lock()
     fileprivate var advanceDeferred: Deferred<FxAState>?
 
     open var actionNeeded: FxAActionNeeded {
         return stateCache.value!.actionNeeded
     }
 
-    public convenience init(configuration: FirefoxAccountConfiguration, email: String, uid: String, deviceRegistration: FxADeviceRegistration?, stateKeyLabel: String, state: FxAState) {
-        self.init(configuration: configuration, email: email, uid: uid, deviceRegistration: deviceRegistration, stateCache: KeychainCache(branch: "account.state", label: stateKeyLabel, value: state))
+    public convenience init(configuration: FirefoxAccountConfiguration, email: String, uid: String, deviceRegistration: FxADeviceRegistration?, declinedEngines: [String]?, stateKeyLabel: String, state: FxAState) {
+        self.init(configuration: configuration, email: email, uid: uid, deviceRegistration: deviceRegistration, declinedEngines: declinedEngines, stateCache: KeychainCache(branch: "account.state", label: stateKeyLabel, value: state))
     }
 
-    public init(configuration: FirefoxAccountConfiguration, email: String, uid: String, deviceRegistration: FxADeviceRegistration?, stateCache: KeychainCache<FxAState>) {
+    public init(configuration: FirefoxAccountConfiguration, email: String, uid: String, deviceRegistration: FxADeviceRegistration?, declinedEngines: [String]?, stateCache: KeychainCache<FxAState>) {
         self.email = email
         self.uid = uid
         self.deviceRegistration = deviceRegistration
+        self.declinedEngines = declinedEngines
         self.configuration = configuration
         self.stateCache = stateCache
         self.stateCache.checkpoint()
@@ -79,10 +83,11 @@ open class FirefoxAccount {
             let unwrapkB = data["unwrapBKey"].string?.hexDecodedData else {
                 return nil
         }
+        let declinedEngines = data["declinedSyncEngines"].array?.flatMap { $0.string }
 
         let verified = data["verified"].bool ?? false
         return FirefoxAccount.from(configuration: configuration,
-            andParametersWithEmail: email, uid: uid, deviceRegistration: nil, verified: verified,
+            andParametersWithEmail: email, uid: uid, deviceRegistration: nil, declinedEngines: declinedEngines, verified: verified,
             sessionToken: sessionToken, keyFetchToken: keyFetchToken, unwrapkB: unwrapkB)
     }
 
@@ -90,7 +95,7 @@ open class FirefoxAccount {
                          andLoginResponse response: FxALoginResponse,
                          unwrapkB: Data) -> FirefoxAccount {
         return FirefoxAccount.from(configuration: configuration,
-            andParametersWithEmail: response.remoteEmail, uid: response.uid, deviceRegistration: nil, verified: response.verified,
+                                   andParametersWithEmail: response.remoteEmail, uid: response.uid, deviceRegistration: nil, declinedEngines: nil, verified: response.verified,
             sessionToken: response.sessionToken as Data, keyFetchToken: response.keyFetchToken as Data, unwrapkB: unwrapkB)
     }
 
@@ -98,6 +103,7 @@ open class FirefoxAccount {
                                 andParametersWithEmail email: String,
                                 uid: String,
                                 deviceRegistration: FxADeviceRegistration?,
+                                declinedEngines: [String]?,
                                 verified: Bool,
                                 sessionToken: Data,
                                 keyFetchToken: Data,
@@ -124,6 +130,7 @@ open class FirefoxAccount {
             email: email,
             uid: uid,
             deviceRegistration: deviceRegistration,
+            declinedEngines: declinedEngines,
             stateKeyLabel: Bytes.generateGUID(),
             state: state
         )
@@ -136,6 +143,7 @@ open class FirefoxAccount {
         dict["email"] = email
         dict["uid"] = uid
         dict["deviceRegistration"] = deviceRegistration
+        dict["declinedEngines"] = declinedEngines
         dict["pushRegistration"] = pushRegistration
         dict["configurationLabel"] = configuration.label.rawValue
         dict["stateKeyLabel"] = stateCache.label
@@ -164,11 +172,13 @@ open class FirefoxAccount {
             let email = dictionary["email"] as? String,
             let uid = dictionary["uid"] as? String {
                 let deviceRegistration = dictionary["deviceRegistration"] as? FxADeviceRegistration
+                let declinedEngines = dictionary["declinedEngines"] as? [String]
                 let stateCache = KeychainCache.fromBranch("account.state", withLabel: dictionary["stateKeyLabel"] as? String, withDefault: SeparatedState(), factory: state)
                 let account = FirefoxAccount(
                     configuration: configurationLabel.toConfiguration(),
                     email: email, uid: uid,
                     deviceRegistration: deviceRegistration,
+                    declinedEngines: declinedEngines,
                     stateCache: stateCache)
                 account.pushRegistration = dictionary["pushRegistration"] as? PushRegistration
                 return account
@@ -298,12 +308,12 @@ open class FirefoxAccount {
         public var description = "The server could not notify the clients."
     }
 
-    @discardableResult open func notify(deviceIDs: [GUID], collectionsChanged collections: [String]) -> Success {
+    @discardableResult open func notify(deviceIDs: [GUID], collectionsChanged collections: [String], reason: String) -> Success {
         guard let session = stateCache.value as? TokenState else {
             return deferMaybe(NotATokenStateError(state: stateCache.value))
         }
         let client = FxAClient10(authEndpoint: self.configuration.authEndpointURL)
-        return client.notify(deviceIDs: deviceIDs, collectionsChanged: collections, withSessionToken: session.sessionToken as NSData) >>== { resp in
+        return client.notify(deviceIDs: deviceIDs, collectionsChanged: collections, reason: reason, withSessionToken: session.sessionToken as NSData) >>== { resp in
             guard resp.success else {
                 return deferMaybe(NotifyError())
             }
@@ -311,7 +321,7 @@ open class FirefoxAccount {
         }
     }
 
-    @discardableResult open func notifyAll(collectionsChanged collections: [String]) -> Success {
+    @discardableResult open func notifyAll(collectionsChanged collections: [String], reason: String) -> Success {
         guard let session = stateCache.value as? TokenState else {
             return deferMaybe(NotATokenStateError(state: stateCache.value))
         }
@@ -319,7 +329,7 @@ open class FirefoxAccount {
             return deferMaybe(FxAClientError.local(NSError()))
         }
         let client = FxAClient10(authEndpoint: self.configuration.authEndpointURL)
-        return client.notifyAll(ownDeviceId: ownDeviceId, collectionsChanged: collections, withSessionToken: session.sessionToken as NSData) >>== { resp in
+        return client.notifyAll(ownDeviceId: ownDeviceId, collectionsChanged: collections, reason: reason, withSessionToken: session.sessionToken as NSData) >>== { resp in
             guard resp.success else {
                 return deferMaybe(NotifyError())
             }
@@ -340,11 +350,11 @@ open class FirefoxAccount {
     }
 
     @discardableResult open func advance() -> Deferred<FxAState> {
-        OSSpinLockLock(&advanceLock)
+        os_unfair_lock_lock(&advanceLock)
         if let deferred = advanceDeferred {
             // We already have an advance() in progress.  This consumer can chain from it.
             log.debug("advance already in progress; returning shared deferred.")
-            OSSpinLockUnlock(&advanceLock)
+            os_unfair_lock_unlock(&advanceLock)
             return deferred
         }
 
@@ -372,11 +382,11 @@ open class FirefoxAccount {
 
         advanceDeferred = deferred
         log.debug("no advance() in progress; setting and returning new shared deferred.")
-        OSSpinLockUnlock(&advanceLock)
+        os_unfair_lock_unlock(&advanceLock)
 
         deferred.upon { _ in
             // This advance() is complete.  Clear the shared deferred.
-            OSSpinLockLock(&self.advanceLock)
+            os_unfair_lock_lock(&self.advanceLock)
             if let existingDeferred = self.advanceDeferred, existingDeferred === deferred {
                 // The guard should not be needed, but should prevent trampling racing consumers.
                 self.advanceDeferred = nil
@@ -384,7 +394,7 @@ open class FirefoxAccount {
             } else {
                 log.warning("advance() completed but shared deferred is not existing deferred; ignoring potential bug!")
             }
-            OSSpinLockUnlock(&self.advanceLock)
+            os_unfair_lock_unlock(&self.advanceLock)
         }
         return deferred
     }

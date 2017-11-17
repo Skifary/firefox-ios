@@ -99,10 +99,6 @@ class ActivityStreamPanel: UICollectionViewController, HomePanel {
         
     }
 
-    deinit {
-        NotificationCenter.default.removeObserver(self, name: NotificationDynamicFontChanged, object: nil)
-    }
-
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
@@ -303,7 +299,7 @@ extension ActivityStreamPanel: UICollectionViewDelegateFlowLayout {
                 case .pocket:
                     view.title = title
                     view.moreButton.isHidden = false
-                    view.moreButton.addTarget(self, action:#selector(ActivityStreamPanel.showMorePocketStories), for: .touchUpInside)
+                    view.moreButton.addTarget(self, action: #selector(ActivityStreamPanel.showMorePocketStories), for: .touchUpInside)
                     return view
                 case .topSites:
                     return UICollectionReusableView()
@@ -543,7 +539,7 @@ extension ActivityStreamPanel: DataObserverDelegate {
     }
 
     func getPocketSites() -> Success {
-        let showPocket = profile.prefs.boolForKey(PrefsKeys.ASPocketStoriesVisible) ?? Pocket.IslocaleSupported(Locale.current.identifier)
+        let showPocket = (profile.prefs.boolForKey(PrefsKeys.ASPocketStoriesVisible) ?? Pocket.IslocaleSupported(Locale.current.identifier)) && AppConstants.MOZ_POCKET_STORIES
         guard showPocket else {
             self.pocketStories = []
             return succeed()
@@ -573,7 +569,7 @@ extension ActivityStreamPanel: DataObserverDelegate {
             // Fetch the default sites
             let defaultSites = self.defaultTopSites()
             // create PinnedSite objects. used by the view layer to tell topsites apart
-            let pinnedSites: [Site] = pinned.map({ PinnedSite(site:$0) })
+            let pinnedSites: [Site] = pinned.map({ PinnedSite(site: $0) })
 
             // Merge default topsites with a user's topsites.
             let mergedSites = mySites.union(defaultSites, f: unionOnURL)
@@ -611,11 +607,11 @@ extension ActivityStreamPanel: DataObserverDelegate {
     }
 
     // Invoked by the ActivityStreamDataObserver when highlights/top sites invalidation is complete.
-    func didInvalidateDataSources(forceHighlights highlights: Bool, forceTopSites topSites: Bool) {
+    func didInvalidateDataSources(refresh forced: Bool, highlightsRefreshed: Bool, topSitesRefreshed: Bool) {
         // Do not reload panel unless we're currently showing the highlight intro or if we
         // force-reloaded the highlights or top sites. This should prevent reloading the
         // panel after we've invalidated in the background on the first load.
-        if showHighlightIntro || highlights || topSites {
+        if showHighlightIntro || forced {
             reloadAll()
         }
     }
@@ -709,11 +705,12 @@ extension ActivityStreamPanel: DataObserverDelegate {
         case .pocket:
             site = Site(url: pocketStories[index].url.absoluteString, title: pocketStories[index].title)
             telemetry.reportEvent(.Click, source: .Pocket, position: index)
+            LeanplumIntegration.sharedInstance.track(eventName: .openedPocketStory, withParameters: ["Source": "Activity Stream" as AnyObject])
         case .topSites, .highlightIntro:
             return
         }
         if let site = site {
-            showSiteWithURLHandler(URL(string:site.url)!)
+            showSiteWithURLHandler(URL(string: site.url)!)
         }
     }
 }
@@ -773,7 +770,11 @@ extension ActivityStreamPanel: HomePanelContextMenu {
         let openInNewTabAction = PhotonActionSheetItem(title: Strings.OpenInNewTabContextMenuTitle, iconString: "quick_action_new_tab") { action in
             self.homePanelDelegate?.homePanelDidRequestToOpenInNewTab(siteURL, isPrivate: false)
             self.telemetry.reportEvent(.NewTab, source: pingSource, position: index)
-            LeanplumIntegration.sharedInstance.track(eventName: .openedNewTab, withParameters: ["Source": "Activity Stream Long Press Context Menu" as AnyObject])
+            let source = ["Source": "Activity Stream Long Press Context Menu" as AnyObject]
+            LeanplumIntegration.sharedInstance.track(eventName: .openedNewTab, withParameters: source)
+            if Section(indexPath.section) == .pocket {
+                LeanplumIntegration.sharedInstance.track(eventName: .openedPocketStory, withParameters: source)
+            }
         }
 
         let openInNewPrivateTabAction = PhotonActionSheetItem(title: Strings.OpenInNewPrivateTabContextMenuTitle, iconString: "quick_action_new_private_tab") { action in
@@ -784,12 +785,12 @@ extension ActivityStreamPanel: HomePanelContextMenu {
         if site.bookmarked ?? false {
             bookmarkAction = PhotonActionSheetItem(title: Strings.RemoveBookmarkContextMenuTitle, iconString: "action_bookmark_remove", handler: { action in
                 self.profile.bookmarks.modelFactory >>== {
-                    $0.removeByURL(siteURL.absoluteString)
+                    $0.removeByURL(siteURL.absoluteString).uponQueue(.main) {_ in
+                        self.profile.panelDataObservers.activityStream.refreshIfNeeded(forceHighlights: true, forceTopSites: false)
+                    }
                     site.setBookmarked(false)
                 }
-                self.profile.panelDataObservers.activityStream.refreshIfNeeded(forceHighlights: false, forceTopSites: true)
                 self.telemetry.reportEvent(.RemoveBookmark, source: pingSource, position: index)
-
             })
         } else {
             bookmarkAction = PhotonActionSheetItem(title: Strings.BookmarkContextMenuTitle, iconString: "action_bookmark", handler: { action in
@@ -803,6 +804,7 @@ extension ActivityStreamPanel: HomePanelContextMenu {
                                                                                     withUserData: userData,
                                                                                     toApplication: UIApplication.shared)
                 site.setBookmarked(true)
+                self.profile.panelDataObservers.activityStream.refreshIfNeeded(forceHighlights: true, forceTopSites: true)
                 self.telemetry.reportEvent(.AddBookmark, source: pingSource, position: index)
                 LeanplumIntegration.sharedInstance.track(eventName: .savedBookmark)
             })
@@ -1000,6 +1002,7 @@ class ASHeaderView: UICollectionReusableView {
     lazy var moreButton: UIButton = {
         let button = UIButton()
         button.setTitle("More", for: .normal)
+        button.isHidden = true
         button.titleLabel?.font = ASHeaderViewUX.TextFont
         button.contentHorizontalAlignment = .right
         button.setTitleColor(UIConstants.SystemBlueColor, for: .normal)

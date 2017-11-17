@@ -46,7 +46,8 @@ class Setting: NSObject {
         cell.detailTextLabel?.numberOfLines = 0
         cell.textLabel?.attributedText = title
         cell.textLabel?.textAlignment = textAlignment
-        cell.textLabel?.numberOfLines = 0
+        cell.textLabel?.numberOfLines = 1
+        cell.textLabel?.lineBreakMode = .byTruncatingTail
         cell.accessoryType = accessoryType
         cell.accessoryView = nil
         cell.selectionStyle = enabled ? .default : .none
@@ -173,6 +174,8 @@ class BoolSetting: Setting {
         let control = UISwitch()
         control.onTintColor = UIConstants.SystemBlueColor
         control.addTarget(self, action: #selector(BoolSetting.switchValueChanged(_:)), for: UIControlEvents.valueChanged)
+        control.accessibilityIdentifier = prefKey
+        
         displayBool(control)
         if let title = title {
             if let status = status {

@@ -34,15 +34,19 @@ class AdvanceAccountSettingViewController: SettingsTableViewController {
     }
     
     func setCustomAccountPrefs(_ data: Data, url: URL) {        
-        guard let json = try? JSONSerialization.jsonObject(with: data, options: .allowFragments) as! [String:Any] else {
+        guard let settings = (try? JSONSerialization.jsonObject(with: data, options: .allowFragments)) as? [String:Any],
+                let customSyncToken = settings["sync_tokenserver_base_url"] as? String,
+                let customSyncProfile = settings["profile_server_base_url"] as? String,
+                let customSyncOauth = settings["oauth_server_base_url"] as? String,
+                let customSyncAuth = settings["auth_server_base_url"] as? String else {
             return
         }
-        
+
         self.profile.prefs.setBool(true, forKey: PrefsKeys.KeyUseCustomSyncService)
-        self.profile.prefs.setString(json["sync_tokenserver_base_url"] as! String, forKey: PrefsKeys.KeyCustomSyncToken)
-        self.profile.prefs.setString(json["profile_server_base_url"] as! String, forKey: PrefsKeys.KeyCustomSyncProfile)
-        self.profile.prefs.setString(json["oauth_server_base_url"] as! String, forKey: PrefsKeys.KeyCustomSyncOauth)
-        self.profile.prefs.setString(json["auth_server_base_url"] as! String, forKey: PrefsKeys.KeyCustomSyncAuth)
+        self.profile.prefs.setString(customSyncToken, forKey: PrefsKeys.KeyCustomSyncToken)
+        self.profile.prefs.setString(customSyncProfile, forKey: PrefsKeys.KeyCustomSyncProfile)
+        self.profile.prefs.setString(customSyncOauth, forKey: PrefsKeys.KeyCustomSyncOauth)
+        self.profile.prefs.setString(customSyncAuth, forKey: PrefsKeys.KeyCustomSyncAuth)
         self.profile.prefs.setString(url.absoluteString, forKey: PrefsKeys.KeyCustomSyncWeb)
         self.profile.removeAccount()
         self.displaySuccessAlert()
@@ -59,9 +63,11 @@ class AdvanceAccountSettingViewController: SettingsTableViewController {
         // FxA stores its server configuation under a well-known path. This attempts to download the configuration
         // and save it into the users preferences.
         let syncConfigureString = urlString + "/.well-known/fxa-client-configuration"
-        let syncConfigureURL = URL(string: syncConfigureString)!
+        guard let syncConfigureURL = URL(string: syncConfigureString) else {
+            return
+        }
         
-        URLSession.shared.dataTask(with:syncConfigureURL, completionHandler: {(data, response, error) in
+        URLSession.shared.dataTask(with: syncConfigureURL, completionHandler: {(data, response, error) in
             guard let data = data, error == nil else {
                 // Something went wrong while downloading or parsing the configuration.
                 self.displayErrorAlert()
@@ -94,12 +100,12 @@ class AdvanceAccountSettingViewController: SettingsTableViewController {
         DispatchQueue.main.async {
             self.tableView.reloadRows(at: [IndexPath(row: 0, section: 0)], with: UITableViewRowAnimation.automatic)
         }
-        let alertController = UIAlertController(title: Strings.SettingsAdvanceAccountUrlErrorAlertTitle, message: NSLocalizedString("Please enter a custom account url before enabling.", comment: "No custom service set."), preferredStyle: .alert)
+        let alertController = UIAlertController(title: Strings.SettingsAdvanceAccountUrlErrorAlertTitle, message: Strings.SettingsAdvanceAccountEmptyUrlErrorAlertMessage, preferredStyle: .alert)
         let defaultAction = UIAlertAction(title: Strings.SettingsAdvanceAccountUrlUpdatedAlertOk, style: .default, handler: nil)
         alertController.addAction(defaultAction)
         self.present(alertController, animated: true)
     }
-    
+
     override func generateSettings() -> [SettingSection] {
         let prefs = profile.prefs
         let customSyncSetting = CustomSyncWebPageSetting(prefs: prefs,
@@ -130,9 +136,9 @@ class AdvanceAccountSettingViewController: SettingsTableViewController {
         
         let settings: [SettingSection] = [
             SettingSection(title: NSAttributedString(string: ""), children: basicSettings),
-            SettingSection(title: NSAttributedString(string: NSLocalizedString("To use a custom Firefox Account and sync servers, specify the root Url of the Firefox Account site. This will download the configuration and setup this device to use the new service. After the new service has been set, you will need to create a new Firefox Account or login with an existing one.", comment: "Details for using custom Firefox Account service.")), children: [])
+            SettingSection(title: NSAttributedString(string: Strings.SettingsAdvanceAccountSectionFooter), children: [])
         ]
-        
+
         return settings
     }
     
@@ -158,7 +164,7 @@ class CustomSyncEnableSetting: BoolSetting {
     init(prefs: Prefs, settingDidChange: ((Bool?) -> Void)? = nil) {
         super.init(
             prefs: prefs, prefKey: PrefsKeys.KeyUseCustomSyncService, defaultValue: false,
-            attributedTitleText: NSAttributedString(string: NSLocalizedString("Use Custom Account Service", tableName: "UseCustomAccountService", comment: "Toggle switch to use custom FxA server")),
+            attributedTitleText: NSAttributedString(string: Strings.SettingsAdvanceAccountUseCustomAccountsServiceTitle),
             settingDidChange: settingDidChange
         )
     }
